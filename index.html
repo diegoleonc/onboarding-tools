@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parametrizador de Onboarding — Multivende</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+            color: #333;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8c 100%);
+            color: white;
+            padding: 30px 40px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 12px rgba(30, 58, 95, 0.15);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 5px;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* Card Layout */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border: 1px solid #f0f0f0;
+        }
+
+        .card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #1e3a5f;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Input Section */
+        .input-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .input-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #1e3a5f;
+        }
+
+        textarea {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+            font-size: 13px;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            resize: vertical;
+            min-height: 120px;
+            transition: border-color 0.2s;
+            line-height: 1.5;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #1e3a5f;
+            box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.1);
+        }
+
+        input[type="date"] {
+            font-size: 14px;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            transition: border-color 0.2s;
+            cursor: pointer;
+        }
+
+        input[type="date"]:focus {
+            outline: none;
+            border-color: #1e3a5f;
+            box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.1);
+        }
+
+        /* Button */
+        .btn-primary {
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8c 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(30, 58, 95, 0.25);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #1e3a5f;
+            border: 2px solid #1e3a5f;
+            padding: 11px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #f5f7fa;
+        }
+
+        /* Info Box */
+        .info-box {
+            background: linear-gradient(135deg, #e8f1f8 0%, #f0f6fb 100%);
+            border-left: 4px solid #1e3a5f;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #2d5a8c;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-icon {
+            font-size: 16px;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+            border-bottom: 1px dotted #2d5a8c;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 300px;
+            background-color: #333;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -150px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Summary Section */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .summary-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #1e3a5f;
+        }
+
+        .summary-item label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .summary-item .value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e3a5f;
+        }
+
+        .summary-item select {
+            font-size: 14px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            width: 100%;
+            margin-top: 5px;
+            cursor: pointer;
+        }
+
+        .summary-item .editable-list {
+            font-size: 13px;
+            color: #333;
+            margin-top: 8px;
+            background: white;
+            padding: 8px;
+            border-radius: 6px;
+            max-height: 120px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+        }
+
+        .summary-item .tag {
+            display: inline-block;
+            background: #1e3a5f;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            margin: 3px 3px 3px 0;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .summary-item .tag .remove {
+            margin-left: 6px;
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        /* Highlight parsing issues */
+        .parsing-warning {
+            background: #fff3cd;
+            border-left-color: #ff9800;
+        }
+
+        /* Estimates Section */
+        .estimates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .estimate-card {
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid;
+        }
+
+        .estimate-card.optimista {
+            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+            border-color: #4caf50;
+        }
+
+        .estimate-card.optimista .icon {
+            color: #4caf50;
+            font-size: 28px;
+        }
+
+        .estimate-card.esperado {
+            background: linear-gradient(135deg, #fff3e0 0%, #fffde7 100%);
+            border-color: #ff9800;
+        }
+
+        .estimate-card.esperado .icon {
+            color: #ff9800;
+            font-size: 28px;
+        }
+
+        .estimate-card.conservador {
+            background: linear-gradient(135deg, #ffebee 0%, #fce4ec 100%);
+            border-color: #f44336;
+        }
+
+        .estimate-card.conservador .icon {
+            color: #f44336;
+            font-size: 28px;
+        }
+
+        .estimate-card .label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .estimate-card .days {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1e3a5f;
+            margin-bottom: 5px;
+        }
+
+        .estimate-card .weeks {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* Radio Group */
+        .radio-group {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .radio-group input[type="radio"] {
+            margin-right: 10px;
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+            accent-color: #1e3a5f;
+        }
+
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+            margin-bottom: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        table thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #1e3a5f;
+        }
+
+        table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #1e3a5f;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        table td:nth-child(1) {
+            font-weight: 600;
+            color: #1e3a5f;
+            width: 25%;
+        }
+
+        table td:nth-child(2) {
+            width: 50%;
+        }
+
+        table td:nth-child(3) {
+            width: 25%;
+            font-family: 'Courier New', monospace;
+            color: #2d5a8c;
+            font-weight: 500;
+        }
+
+        /* Export Buttons */
+        .export-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn-export {
+            flex: 1;
+            min-width: 180px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: 2px solid #1e3a5f;
+            background: white;
+            color: #1e3a5f;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-export:hover {
+            background: #1e3a5f;
+            color: white;
+        }
+
+        /* History Section */
+        .history-section {
+            margin-top: 30px;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .history-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid #1e3a5f;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+
+        .history-item:hover {
+            background: #e8ecf1;
+            transform: translateX(4px);
+        }
+
+        .history-item .project-name {
+            font-weight: 600;
+            color: #1e3a5f;
+            flex: 1;
+        }
+
+        .history-item .project-date {
+            font-size: 12px;
+            color: #999;
+            margin-right: 15px;
+        }
+
+        .history-empty {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 13px;
+        }
+
+        /* Hidden state */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Results Section */
+        .results-section {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Task counter */
+        .task-counter {
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8c 100%);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .card {
+                padding: 15px;
+            }
+
+            .estimates-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .export-buttons {
+                flex-direction: column;
+            }
+
+            .btn-export {
+                min-width: 100%;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            table th, table td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>⚡ Parametrizador de Onboarding</h1>
+            <p>Multivende — Generador de tareas para Asana</p>
+        </div>
+
+        <!-- Input Section -->
+        <div class="card">
+            <h2>📋 Paso 1: Ingrese datos del proyecto</h2>
+            <div class="info-box">
+                <span class="info-icon">ℹ️</span>
+                <span>Pegue el nombre exacto del proyecto desde Asana. El sistema detectará automáticamente empresa, país, plan y canales.</span>
+            </div>
+
+            <div class="input-section">
+                <div class="form-group">
+                    <label for="projectName">Nombre del proyecto de Asana</label>
+                    <textarea id="projectName" placeholder="Ej: PC Express- Setup Starter (Falabella/Walmart/Paris/Ripley)"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="startDate">Fecha de inicio</label>
+                    <input type="date" id="startDate">
+                </div>
+            </div>
+
+            <button class="btn-primary" onclick="parametrize()">⚡ Parametrizar</button>
+        </div>
+
+        <!-- Info Box -->
+        <div class="card">
+            <div class="info-box">
+                <span class="info-icon">📊</span>
+                <span>Modelo basado en 1,035 proyectos completados
+                    <span class="tooltip">
+                        Fórmula de estimación
+                        <span class="tooltiptext">Starter: 59 + 5×canales | Pro: 56 + 12×canales | Advanced: 48 + 18×canales | Enterprise: 80 + 10×canales | Upgrade: 14 + 3×canales. Integraciones complejas: +16 días</span>
+                    </span>
+                </span>
+            </div>
+        </div>
+
+        <!-- Results Section (hidden by default) -->
+        <div id="resultsSection" class="hidden">
+            <!-- Summary -->
+            <div class="card">
+                <h2>🎯 Paso 2: Resumen detectado</h2>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <label>Empresa</label>
+                        <div class="value" id="summaryCompany">-</div>
+                    </div>
+                    <div class="summary-item">
+                        <label>País</label>
+                        <div class="value" id="summaryCountry">-</div>
+                    </div>
+                    <div class="summary-item">
+                        <label>Plan</label>
+                        <select id="planSelect" onchange="updateEstimates()">
+                            <option value="Starter">Starter</option>
+                            <option value="Pro">Pro</option>
+                            <option value="Advanced">Advanced</option>
+                            <option value="Enterprise">Enterprise</option>
+                            <option value="Gold">Gold</option>
+                            <option value="Platinum">Platinum</option>
+                        </select>
+                    </div>
+                    <div class="summary-item">
+                        <label>Tipo</label>
+                        <select id="typeSelect" onchange="updateEstimates()">
+                            <option value="Setup">Setup</option>
+                            <option value="Upgrade">Upgrade</option>
+                            <option value="Reonboarding">Reonboarding</option>
+                        </select>
+                    </div>
+                    <div class="summary-item">
+                        <label>Canales detectados</label>
+                        <div id="summaryChannels" class="editable-list"></div>
+                    </div>
+                    <div class="summary-item">
+                        <label>Total conexiones de canales</label>
+                        <div class="value" id="summaryTotalChannels">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estimates -->
+            <div class="card">
+                <h2>📈 Paso 3: Estimaciones de duración</h2>
+                <div class="estimates-grid">
+                    <div class="estimate-card optimista">
+                        <div class="icon">🟢</div>
+                        <div class="label">Optimista (P50)</div>
+                        <div class="days" id="estimateOptimista">0</div>
+                        <div class="weeks" id="estimateOptimistaWeeks">0 semanas</div>
+                    </div>
+                    <div class="estimate-card esperado">
+                        <div class="icon">🟡</div>
+                        <div class="label">Esperado</div>
+                        <div class="days" id="estimateEsperado">0</div>
+                        <div class="weeks" id="estimateEsperadoWeeks">0 semanas</div>
+                    </div>
+                    <div class="estimate-card conservador">
+                        <div class="icon">🔴</div>
+                        <div class="label">Conservador (P80)</div>
+                        <div class="days" id="estimateConservador">0</div>
+                        <div class="weeks" id="estimateConservadorWeeks">0 semanas</div>
+                    </div>
+                </div>
+
+                <div class="radio-group">
+                    <label>
+                        <input type="radio" name="estimateType" value="optimista" onchange="updateTaskTable()">
+                        Usar estimación optimista (P50)
+                    </label>
+                    <label>
+                        <input type="radio" name="estimateType" value="esperado" checked onchange="updateTaskTable()">
+                        Usar estimación esperada (recomendada)
+                    </label>
+                    <label>
+                        <input type="radio" name="estimateType" value="conservador" onchange="updateTaskTable()">
+                        Usar estimación conservadora (P80)
+                    </label>
+                </div>
+            </div>
+
+            <!-- Tasks -->
+            <div class="card">
+                <h2>✅ Paso 4: Tareas generadas</h2>
+                <div class="task-counter">
+                    Total: <span id="taskCounter">0</span> tareas
+                </div>
+                <div class="table-container">
+                    <table id="tasksTable">
+                        <thead>
+                            <tr>
+                                <th>Sección</th>
+                                <th>Tarea</th>
+                                <th>Fecha</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tasksTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Export -->
+            <div class="card">
+                <h2>📥 Paso 5: Exportar resultados</h2>
+                <div class="export-buttons">
+                    <button class="btn-export" onclick="copyProjectName()">📋 Copiar nombre del proyecto</button>
+                    <button class="btn-export" onclick="downloadCSV()">📥 Descargar CSV para Asana</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Section -->
+        <div class="card">
+            <h2>📜 Historial de parametrizaciones</h2>
+            <div class="history-list" id="historyList">
+                <div class="history-empty">Aún no hay proyectos. Cree uno para verlo aquí.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== UTILITY FUNCTIONS =====
+
+        function getNextMonday(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        }
+
+        function addBusinessDays(date, days) {
+            let current = new Date(date);
+            let added = 0;
+
+            while (added < days) {
+                current.setDate(current.getDate() + 1);
+                const dayOfWeek = current.getDay();
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    added++;
+                }
+            }
+
+            return current;
+        }
+
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function daysToWeeks(days) {
+            const weeks = Math.ceil(days / 7);
+            return weeks === 1 ? '1 semana' : `${weeks} semanas`;
+        }
+
+        // ===== PARSING FUNCTIONS =====
+
+        function parseProjectName(name) {
+            const result = {
+                company: '',
+                country: '',
+                type: 'Setup',
+                plan: 'Starter',
+                channels: [],
+                totalChannels: 0,
+                parseWarnings: []
+            };
+
+            // Parse company (before " - ")
+            const parts = name.split(' - ');
+            if (parts.length >= 2) {
+                result.company = parts[0].trim();
+            } else {
+                result.company = name.trim();
+                result.parseWarnings.push('No se encontró separador " - "');
+            }
+
+            const fullText = name.toUpperCase();
+
+            // Detect country
+            const countries = {
+                'CHILE': 'Chile',
+                'COLOMBI': 'Colombia',
+                'MÉXICO': 'México',
+                'MEXICO': 'México',
+                'PERÚ': 'Perú',
+                'PERU': 'Perú',
+                'ECUADOR': 'Ecuador',
+                'ARGENTINA': 'Argentina',
+                'URUGUAY': 'Uruguay',
+                'VENEZUELA': 'Venezuela',
+                'USA': 'USA'
+            };
+
+            for (const [key, value] of Object.entries(countries)) {
+                if (fullText.includes(key)) {
+                    result.country = value;
+                    break;
+                }
+            }
+
+            if (!result.country) {
+                result.parseWarnings.push('País no detectado');
+            }
+
+            // Detect type
+            if (fullText.includes('UPGRADE')) {
+                result.type = 'Upgrade';
+            } else if (fullText.includes('REONBOARDING') || fullText.includes('RE-ONBOARDING')) {
+                result.type = 'Reonboarding';
+            } else {
+                result.type = 'Setup';
+            }
+
+            // Detect plan
+            const plans = [
+                {names: ['PLATINUM'], value: 'Platinum'},
+                {names: ['ENTERPRISE', 'ENTREPRISE'], value: 'Enterprise'},
+                {names: ['ADVANCED'], value: 'Advanced'},
+                {names: ['GOLD'], value: 'Gold'},
+                {names: ['PRO ','PRO(','PRO-','PRO)'], value: 'Pro'},
+                {names: ['STARTER', 'SATARTER'], value: 'Starter'}
+            ];
+            for (const plan of plans) {
+                if (plan.names.some(n => fullText.includes(n))) {
+                    result.plan = plan.value;
+                    break;
+                }
+            }
+
+            // Parse channels
+            const channelMatch = name.match(/\(([^)]+)\)/);
+            if (channelMatch) {
+                const channelText = channelMatch[1];
+                result.channels = parseChannels(channelText);
+                result.totalChannels = countTotalChannels(result.channels);
+            } else {
+                result.parseWarnings.push('No se encontraron canales (entre paréntesis)');
+            }
+
+            return result;
+        }
+
+        function parseChannels(text) {
+            const channels = [];
+            const items = text.split('/').map(s => s.trim());
+
+            for (const item of items) {
+                const match = item.match(/^(\d+)\s*(.+)$/i);
+
+                if (match) {
+                    const count = parseInt(match[1]);
+                    let name = match[2].trim().toUpperCase();
+
+                    // Normalize names
+                    name = normalizeName(name);
+
+                    for (let i = 0; i < count; i++) {
+                        channels.push(name);
+                    }
+                } else {
+                    // Single channel
+                    let name = item.toUpperCase().trim();
+                    name = normalizeName(name);
+                    channels.push(name);
+                }
+            }
+
+            return channels;
+        }
+
+        function normalizeName(name) {
+            const mapping = {
+                'MELI': 'MERCADO LIBRE',
+                'ML': 'MERCADO LIBRE',
+                'MERCADO LIBRE': 'MERCADO LIBRE',
+                'FCOM': 'FALABELLA',
+                'TIKTOK': 'TIKTOK SHOP',
+                'TIENDA NUBE': 'TIENDANUBE',
+                'MSHOPS': 'MERCADO SHOPS',
+                'WOO': 'WOOCOMMERCE'
+            };
+
+            for (const [key, value] of Object.entries(mapping)) {
+                if (name.includes(key)) {
+                    return value;
+                }
+            }
+
+            return name;
+        }
+
+        function countTotalChannels(channels) {
+            return channels.length;
+        }
+
+        function isComplexIntegration(channelName) {
+            const complex = [
+                'VTEX', 'MAGENTO', 'WOOCOMMERCE', 'SHOPIFY',
+                'SLOT', 'API', 'AGREGADOR', 'PRESTASHOP',
+                'TIENDANUBE'
+            ];
+
+            for (const type of complex) {
+                if (channelName.includes(type)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // ===== ESTIMATION =====
+
+        function calculateEstimation(plan, type, totalChannels, channels) {
+            let baseDays = 0;
+
+            // Base calculation
+            if (type === 'Upgrade') {
+                baseDays = 14 + 3 * totalChannels;
+            } else if (type === 'Reonboarding') {
+                baseDays = 59 + 5 * totalChannels;
+            } else {
+                // Setup
+                switch (plan) {
+                    case 'Starter':
+                        baseDays = 59 + 5 * totalChannels;
+                        break;
+                    case 'Pro':
+                        baseDays = 56 + 12 * totalChannels;
+                        break;
+                    case 'Advanced':
+                        baseDays = 48 + 18 * totalChannels;
+                        break;
+                    case 'Enterprise':
+                        baseDays = 80 + 10 * totalChannels;
+                        break;
+                    case 'Gold':
+                        baseDays = 56 + 12 * totalChannels;
+                        break;
+                    case 'Platinum':
+                        baseDays = 65 + 14 * totalChannels;
+                        break;
+                    default:
+                        baseDays = 59 + 5 * totalChannels;
+                }
+            }
+
+            // Add complex integration days
+            for (const channel of channels) {
+                if (isComplexIntegration(channel)) {
+                    baseDays += 16;
+                    break; // Only add once
+                }
+            }
+
+            return {
+                esperado: Math.round(baseDays),
+                optimista: Math.round(baseDays * 0.85),
+                conservador: Math.round(baseDays * 1.35)
+            };
+        }
+
+        // ===== TASK GENERATION =====
+
+        function generateTasks(parsed, estimate) {
+            const tasks = [];
+            const startDate = new Date(document.getElementById('startDate').value);
+
+            // INICIO section
+            tasks.push({ section: 'INICIO', task: 'PRE KICK OFF', daysFromStart: 0 });
+            tasks.push({ section: 'INICIO', task: 'ENVÍO DE FORMULARIO A MERCHANT', daysFromStart: 0 });
+            tasks.push({ section: 'INICIO', task: 'SECUENCIA DE INVITACIONES (ADMINISTRATIVO)', daysFromStart: 3 });
+            tasks.push({ section: 'INICIO', task: 'KICK OFF DEFINICIÓN FLUJO DE TRABAJO', daysFromStart: 4 });
+            tasks.push({ section: 'INICIO', task: 'WORKSHOP DE BIENVENIDA A MULTIVENDE', daysFromStart: 11 });
+            tasks.push({ section: 'INICIO', task: 'CREACIÓN CATÁLOGO DESDE CERO', daysFromStart: 18 });
+
+            // WORKSHOP section
+            const workshopEndDay = 25 + 7 * (parsed.channels.length + 1);
+
+            tasks.push({ section: 'WORKSHOP', task: 'WORKSHOP SOBRE LOGÍSTICA Y MENSAJERÍA EN MELI', daysFromStart: 25 });
+            tasks.push({ section: 'WORKSHOP', task: 'WORKSHOP SOBRE EL CATÁLOGO Y PUBLICACIONES', daysFromStart: 26 });
+
+            // Get unique channel names
+            const uniqueChannels = [...new Set(parsed.channels)];
+            for (let i = 0; i < uniqueChannels.length; i++) {
+                const channelName = uniqueChannels[i];
+                tasks.push({
+                    section: 'WORKSHOP',
+                    task: `WORKSHOP SOBRE ${channelName}`,
+                    daysFromStart: 25 + 7 * (i + 2)
+                });
+            }
+
+            // Channel sections
+            const remainingDays = estimate - workshopEndDay - 3;
+            const daysPerChannel = Math.max(5, Math.floor(remainingDays / parsed.totalChannels));
+
+            let channelIndex = 0;
+            const channelCounts = {};
+
+            for (const channel of parsed.channels) {
+                channelCounts[channel] = (channelCounts[channel] || 0) + 1;
+                const sectionName = `${channel} ${channelCounts[channel]}`;
+                const channelStart = workshopEndDay + Math.floor(channelIndex * daysPerChannel);
+
+                tasks.push({ section: sectionName, task: 'MAPEO DE CATEGORÍAS', daysFromStart: channelStart });
+                tasks.push({ section: sectionName, task: 'MAPEO DE ATRIBUTOS', daysFromStart: channelStart });
+                tasks.push({ section: sectionName, task: 'MAPEO DE PRODUCTOS (ACTIVACIÓN/DESACTIVACIÓN)', daysFromStart: channelStart + 1 });
+                tasks.push({ section: sectionName, task: 'LISTADO DE PRECIOS Y ÁLBUM DE FOTOS', daysFromStart: channelStart + 1 });
+                tasks.push({ section: sectionName, task: 'CAPACITACIÓN DE VENTAS Y LOGÍSTICA', daysFromStart: channelStart + Math.floor(daysPerChannel * 0.3) });
+                tasks.push({ section: sectionName, task: 'CONFIGURACIÓN DE BODEGAS Y ACTUALIZACIÓN DE STOCK', daysFromStart: channelStart + Math.floor(daysPerChannel * 0.3) });
+                tasks.push({ section: sectionName, task: 'ACTUALIZACIÓN DE ATRIBUTOS PERSONALIZADOS', daysFromStart: channelStart + Math.floor(daysPerChannel * 0.5) });
+                tasks.push({ section: sectionName, task: 'ACTIVACIÓN DE PRODUCTOS Y REVISIÓN DE ERRORES', daysFromStart: channelStart + Math.floor(daysPerChannel * 0.6) });
+                tasks.push({ section: sectionName, task: 'CORRECCIÓN DE ERRORES DE SINCRONIZACIÓN', daysFromStart: channelStart + Math.floor(daysPerChannel * 0.7) });
+                tasks.push({ section: sectionName, task: 'CREACIÓN Y ACTUALIZACIÓN DEL CATÁLOGO', daysFromStart: channelStart + Math.floor(daysPerChannel * 0.85) });
+                tasks.push({ section: sectionName, task: 'VERIFICACIÓN DE SINCRONIZACIÓN', daysFromStart: channelStart + daysPerChannel - 1 });
+
+                channelIndex++;
+            }
+
+            // CIERRE section
+            tasks.push({ section: 'CIERRE', task: 'CAPACITACIÓN SOBRE REPORTES Y NOTIFICACIONES', daysFromStart: estimate - 1 });
+            tasks.push({ section: 'CIERRE', task: 'REUNIÓN FINAL DUDAS Y CIERRE PROCESO ONBOARDING', daysFromStart: estimate });
+            tasks.push({ section: 'CIERRE', task: 'ENVIAR CORREO DE CIERRE DEL PROCESO DE ONBOARDING', daysFromStart: estimate });
+
+            // Convert to dates
+            return tasks.map(t => ({
+                section: t.section,
+                task: t.task,
+                date: formatDate(addBusinessDays(startDate, t.daysFromStart))
+            }));
+        }
+
+        // ===== UI UPDATE FUNCTIONS =====
+
+        function updateEstimates() {
+            const plan = document.getElementById('planSelect').value;
+            const type = document.getElementById('typeSelect').value;
+            const estimations = window.currentEstimations;
+
+            document.getElementById('estimateOptimista').textContent = estimations.optimista;
+            document.getElementById('estimateOptimistaWeeks').textContent = daysToWeeks(estimations.optimista);
+
+            document.getElementById('estimateEsperado').textContent = estimations.esperado;
+            document.getElementById('estimateEsperadoWeeks').textContent = daysToWeeks(estimations.esperado);
+
+            document.getElementById('estimateConservador').textContent = estimations.conservador;
+            document.getElementById('estimateConservadorWeeks').textContent = daysToWeeks(estimations.conservador);
+
+            updateTaskTable();
+        }
+
+        function updateTaskTable() {
+            const selected = document.querySelector('input[name="estimateType"]:checked').value;
+            const estimations = window.currentEstimations;
+            const estimate = estimations[selected];
+
+            const tasks = generateTasks(window.currentParsed, estimate);
+            const tbody = document.getElementById('tasksTableBody');
+            tbody.innerHTML = '';
+
+            let currentSection = '';
+            for (const task of tasks) {
+                const row = document.createElement('tr');
+
+                if (task.section !== currentSection) {
+                    currentSection = task.section;
+                }
+
+                row.innerHTML = `
+                    <td>${task.section}</td>
+                    <td>${task.task}</td>
+                    <td>${task.date}</td>
+                `;
+
+                tbody.appendChild(row);
+            }
+
+            document.getElementById('taskCounter').textContent = tasks.length;
+        }
+
+        function parametrize() {
+            const projectName = document.getElementById('projectName').value.trim();
+
+            if (!projectName) {
+                alert('Por favor ingrese el nombre del proyecto');
+                return;
+            }
+
+            // Set default date to next Monday if not set
+            let startDate = document.getElementById('startDate').value;
+            if (!startDate) {
+                const nextMonday = getNextMonday(new Date());
+                startDate = formatDate(nextMonday);
+                document.getElementById('startDate').value = startDate;
+            }
+
+            const parsed = parseProjectName(projectName);
+            window.currentParsed = parsed;
+
+            // Calculate estimations
+            const estimations = calculateEstimation(parsed.plan, parsed.type, parsed.totalChannels, parsed.channels);
+            window.currentEstimations = estimations;
+
+            // Update summary
+            document.getElementById('summaryCompany').textContent = parsed.company || '-';
+            document.getElementById('summaryCountry').textContent = parsed.country || '-';
+            document.getElementById('planSelect').value = parsed.plan;
+            document.getElementById('typeSelect').value = parsed.type;
+            document.getElementById('summaryTotalChannels').textContent = parsed.totalChannels;
+
+            // Update channels display
+            const channelList = document.getElementById('summaryChannels');
+            channelList.innerHTML = '';
+            const uniqueChannels = [...new Set(parsed.channels)];
+            for (const channel of uniqueChannels) {
+                const count = parsed.channels.filter(c => c === channel).length;
+                const tag = document.createElement('span');
+                tag.className = 'tag';
+                tag.textContent = `${channel}${count > 1 ? ' ×' + count : ''}`;
+                channelList.appendChild(tag);
+            }
+
+            // Add parsing warnings
+            if (parsed.parseWarnings.length > 0) {
+                const summary = document.querySelector('.summary-grid').parentElement;
+                let warningBox = summary.querySelector('.parsing-warning');
+                if (!warningBox) {
+                    warningBox = document.createElement('div');
+                    warningBox.className = 'info-box parsing-warning';
+                    summary.insertBefore(warningBox, summary.firstChild);
+                }
+                warningBox.innerHTML = `<span class="info-icon">⚠️</span><span>${parsed.parseWarnings.join(' | ')}</span>`;
+            }
+
+            // Update estimates display
+            updateEstimates();
+
+            // Show results section
+            document.getElementById('resultsSection').classList.remove('hidden');
+
+            // Save to history
+            saveToHistory(projectName, startDate);
+
+            // Scroll to results
+            setTimeout(() => {
+                document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+
+        // ===== EXPORT FUNCTIONS =====
+
+        function copyProjectName() {
+            const projectName = document.getElementById('projectName').value;
+            navigator.clipboard.writeText(projectName).then(() => {
+                const btn = event.target;
+                const original = btn.textContent;
+                btn.textContent = '✅ Copiado!';
+                setTimeout(() => {
+                    btn.textContent = original;
+                }, 2000);
+            });
+        }
+
+        function downloadCSV() {
+            const tbody = document.getElementById('tasksTableBody');
+            const rows = tbody.querySelectorAll('tr');
+
+            let csv = 'Name,Section/Column,Due Date\n';
+            let currentSection = '';
+
+            for (const row of rows) {
+                const cells = row.querySelectorAll('td');
+                const section = cells[0].textContent.trim();
+                const task = cells[1].textContent.trim();
+                const date = cells[2].textContent.trim();
+
+                if (section !== currentSection) {
+                    currentSection = section;
+                    csv += `"${section}","${section}",""\n`;
+                }
+
+                csv += `"${task}","${section}","${date}"\n`;
+            }
+
+            // Add BOM for UTF-8
+            const BOM = '\uFEFF';
+            const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+
+            link.setAttribute('href', url);
+            link.setAttribute('download', `tareas-onboarding-${formatDate(new Date())}.csv`);
+            link.style.visibility = 'hidden';
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // ===== HISTORY =====
+
+        function saveToHistory(projectName, date) {
+            let history = JSON.parse(localStorage.getItem('parametrizadorHistory')) || [];
+
+            history.unshift({
+                projectName: projectName,
+                date: date,
+                timestamp: new Date().getTime()
+            });
+
+            history = history.slice(0, 10); // Keep only last 10
+            localStorage.setItem('parametrizadorHistory', JSON.stringify(history));
+
+            updateHistoryDisplay();
+        }
+
+        function updateHistoryDisplay() {
+            const history = JSON.parse(localStorage.getItem('parametrizadorHistory')) || [];
+            const historyList = document.getElementById('historyList');
+
+            if (history.length === 0) {
+                historyList.innerHTML = '<div class="history-empty">Aún no hay proyectos. Cree uno para verlo aquí.</div>';
+                return;
+            }
+
+            historyList.innerHTML = history.map((item, idx) => `
+                <div class="history-item" onclick="loadFromHistory(${idx})">
+                    <span class="project-name">${item.projectName}</span>
+                    <span class="project-date">${item.date}</span>
+                </div>
+            `).join('');
+        }
+
+        function loadFromHistory(index) {
+            const history = JSON.parse(localStorage.getItem('parametrizadorHistory')) || [];
+            const item = history[index];
+
+            document.getElementById('projectName').value = item.projectName;
+            document.getElementById('startDate').value = item.date;
+            parametrize();
+        }
+
+        // ===== INITIALIZATION =====
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set default date to next Monday
+            const nextMonday = getNextMonday(new Date());
+            document.getElementById('startDate').value = formatDate(nextMonday);
+
+            // Load history
+            updateHistoryDisplay();
+
+            // Allow Enter key to parametrize
+            document.getElementById('projectName').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    parametrize();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
