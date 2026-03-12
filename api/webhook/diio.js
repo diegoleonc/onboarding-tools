@@ -539,7 +539,9 @@ async function createStatusUpdate(projectGid, meetingData, token) {
   const objections = tv.objections?.value;
   const unresolvedQueries = tv.unresolve_queries?.value;
   const commitments = meetingData.commitments;
-  const duration = meetingData.duration;
+  // DIIO sends duration in seconds — convert to minutes
+  const rawDuration = meetingData.duration;
+  const duration = rawDuration ? Math.round(rawDuration / 60) : null;
   const sentiment = tv.sentiment?.value;
   const meetingDate = meetingData.scheduled_at
     ? new Date(meetingData.scheduled_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
