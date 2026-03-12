@@ -578,17 +578,33 @@ export default async function handler(req, res) {
 
   const body = req.body;
 
+  // Log every incoming webhook for debugging
+  console.log('DIIO webhook received:', JSON.stringify({
+    action: body.action,
+    id: body.id,
+    integration_type: body.integration_type,
+    name: body.name,
+    hasTrackerValues: !!body.tracker_values,
+    hasParticipants: !!body.participants,
+    keys: Object.keys(body),
+  }));
+
   // Validate signature
   if (!validateSignature(req, body)) {
     console.error('Invalid webhook signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  // Check if this is a supported event
+  // Detect event type:
+  // 1. Meetings have action: "meeting.finished"
+  // 2. Conversations may NOT have an action field — detect by integration_type + tracker_values
   const action = body.action;
-  if (!SUPPORTED_ACTIONS.includes(action)) {
-    logEvent(action, body.name, null, true, 'Skipped - unsupported event');
-    return res.status(200).json({ status: 'ok', message: `Skipped event: ${action}` });
+  const isConversation = !action && body.integration_type && body.tracker_values;
+
+  if (!SUPPORTED_ACTIONS.includes(action) && !isConversation) {
+    logEvent(action || 'unknown', body.name || body.id, null, true,
+      `Skipped - unrecognized event. Keys: ${Object.keys(body).join(', ')}`);
+    return res.status(200).json({ status: 'ok', message: `Skipped event: ${action || 'unknown'}` });
   }
 
   try {
@@ -631,8 +647,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // ===== WHATSAPP CONVERSATION FINISHED =====
-    if (action === 'written_conversation.finished') {
+    // ===== WHATSAPP CONVERSATION PROCESSED =====
+    // Detected by: integration_type present + tracker_values present, OR action contains 'written_conversation'
+    if (isConversation || (action && action.includes('written_conversation'))) {
       const convInfo = extractConversationInfo(body);
       const convId = body.id || 'unknown';
 
