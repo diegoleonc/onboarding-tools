@@ -166,6 +166,38 @@ function computeSentimentStatus(sentiment) {
   return 'on_track';                  // Good sentiment → En curso
 }
 
+// ===== EXTRACT COMPANY NAME FROM CONVERSATION TITLE =====
+// DIIO conversation names follow patterns like:
+//   "Conversación con Línea Estética Colombia - Multivende"
+//   "Conversación con Empresa XYZ"
+//   "Empresa ABC - Multivende"
+function extractCompanyFromConversationName(conversationName) {
+  if (!conversationName) return null;
+
+  const patterns = [
+    // "Conversación con [Company] - Multivende"
+    /^Conversaci[oó]n\s+con\s+(.+?)\s*-\s*Multivende/i,
+    // "Conversación con [Company]"
+    /^Conversaci[oó]n\s+con\s+(.+?)$/i,
+    // "[Company] - Multivende" (same as meetings)
+    /^(.+?)\s*-\s*Multivende/i,
+    // "[Company] - Onboarding Multivende"
+    /^(.+?)\s*-\s*Onboarding/i,
+    // Fallback: "[Company] - whatever"
+    /^(.+?)\s*-\s*/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = conversationName.match(pattern);
+    if (match) {
+      const name = match[1].trim();
+      if (name.length >= 2) return name;
+    }
+  }
+
+  return null;
+}
+
 // ===== EXTRACT INFO FROM WHATSAPP CONVERSATION =====
 function extractConversationInfo(body) {
   const participants = body.participants || [];
@@ -198,8 +230,59 @@ function extractConversationInfo(body) {
 }
 
 // ===== FIND ASANA PROJECT FOR WHATSAPP CONVERSATION =====
-async function findAsanaProjectForConversation(contactNames, userEmails, token) {
-  // Strategy 1: Search by contact names (most reliable if contact = company)
+async function findAsanaProjectForConversation(conversationName, contactNames, userEmails, token) {
+  // Strategy 0 (BEST): Extract company from conversation title (e.g. "Conversación con Empresa - Multivende")
+  const companyFromTitle = extractCompanyFromConversationName(conversationName);
+  if (companyFromTitle) {
+    console.log(`Conversation title match: extracted "${companyFromTitle}" from "${conversationName}"`);
+
+    // Use the same matching logic as meetings — typeahead + portfolio verification
+    const searchResults = await asanaRequest(
+      `/workspaces/592491987465948/typeahead?resource_type=project&query=${encodeURIComponent(companyFromTitle)}&count=10`,
+      token
+    );
+
+    if (searchResults?.data?.length > 0) {
+      for (const result of searchResults.data) {
+        const projectName = result.name.toLowerCase();
+        const searchName = companyFromTitle.toLowerCase();
+
+        if (projectName.includes(searchName) || searchName.includes(projectName.split(' ')[0])) {
+          const project = await isProjectInPortfolios(result.gid, token);
+          if (project) {
+            return { project, matchedBy: 'conversation_title', matchedValue: companyFromTitle };
+          }
+        }
+      }
+    }
+
+    // Fallback: portfolio scan with company name from title
+    for (const portfolioGid of PORTFOLIOS) {
+      const items = await asanaRequest(
+        `/portfolios/${portfolioGid}/items?opt_fields=name,completed&limit=100`,
+        token
+      );
+
+      if (items?.data) {
+        for (const project of items.data) {
+          if (project.completed) continue;
+          const projectNameLower = project.name.toLowerCase();
+          const searchNameLower = companyFromTitle.toLowerCase();
+
+          if (projectNameLower.includes(searchNameLower) || searchNameLower.includes(projectNameLower.split(' ')[0])) {
+            return { project, matchedBy: 'conversation_title_portfolio', matchedValue: companyFromTitle };
+          }
+
+          const words = searchNameLower.split(/\s+/).filter(w => w.length > 2);
+          if (words.length > 1 && words.every(w => projectNameLower.includes(w))) {
+            return { project, matchedBy: 'conversation_title_fuzzy', matchedValue: companyFromTitle };
+          }
+        }
+      }
+    }
+  }
+
+  // Strategy 1: Search by contact names
   for (const contactName of contactNames) {
     // Clean the contact name - remove common prefixes/suffixes
     const cleanName = contactName
@@ -296,6 +379,7 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   const unresolvedQueries = tv.unresolve_queries?.value;
   const sentiment = tv.sentiment?.value;
   const playbook = body.playbook?.name || '';
+  const convType = body.conversation_type || body.type || '';
 
   // Compute smart status
   const statusResult = await computeSmartStatus(projectGid, sentiment, token);
@@ -307,8 +391,12 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
 
   const today = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+  // Extract company name from conversation title for a cleaner display
+  const companyFromTitle = extractCompanyFromConversationName(body.name);
+
   // Build status update text
   let text = `💬 Resumen conversación WhatsApp — ${today}`;
+  if (convType) text += `\nTipo: ${convType}`;
   if (playbook) text += `\nPlaybook: ${playbook}`;
   text += `\n\n${summary}`;
 
@@ -337,11 +425,15 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   text += `\n📊 Estado: ${statusResult.reason}`;
   text += `\n— Actualización automática vía DIIO (WhatsApp)`;
 
+  // Title: use company name if available, otherwise generic
+  const titleCompany = companyFromTitle || matchInfo.matchedValue || 'WhatsApp';
+  const title = `WhatsApp ${today} — ${titleCompany}`;
+
   const response = await asanaRequest('/status_updates', token, 'POST', {
     data: {
       parent: projectGid,
       status_type: statusResult.statusType,
-      title: `WhatsApp ${today} — Resumen DIIO`,
+      title: title,
       text: text,
     },
   });
@@ -584,8 +676,11 @@ export default async function handler(req, res) {
     id: body.id,
     integration_type: body.integration_type,
     name: body.name,
+    conversation_type: body.conversation_type || body.type,
     hasTrackerValues: !!body.tracker_values,
+    trackerKeys: body.tracker_values ? Object.keys(body.tracker_values) : [],
     hasParticipants: !!body.participants,
+    participantCount: Array.isArray(body.participants) ? body.participants.length : 0,
     keys: Object.keys(body),
   }));
 
@@ -652,13 +747,14 @@ export default async function handler(req, res) {
     if (isConversation || (action && action.includes('written_conversation'))) {
       const convInfo = extractConversationInfo(body);
       const convId = body.id || 'unknown';
+      const convName = body.name || '';
 
-      logEvent(action, convId, null, true,
-        `Contacts: [${convInfo.contactNames.join(', ')}] | Users: [${convInfo.userEmails.join(', ')}]`
+      logEvent(action || 'conversation', convName || convId, null, true,
+        `Name: "${convName}" | Contacts: [${convInfo.contactNames.join(', ')}] | Users: [${convInfo.userEmails.join(', ')}]`
       );
 
       const matchResult = await findAsanaProjectForConversation(
-        convInfo.contactNames, convInfo.userEmails, token
+        convName, convInfo.contactNames, convInfo.userEmails, token
       );
 
       if (!matchResult) {
