@@ -1,5 +1,9 @@
 // Vercel Serverless Function: Calculate effort metrics per project
 // Reads status updates from Asana to compute meetings, conversations, and time spent
+export const config = {
+  maxDuration: 60, // Allow up to 60 seconds (Vercel Pro/Hobby limit)
+};
+
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
 
 const PORTFOLIOS = [
@@ -8,12 +12,24 @@ const PORTFOLIOS = [
   '1203602528347974', // 03 Reonboarding
 ];
 
+const CONCURRENCY = 10; // Max parallel Asana API calls
+
 async function asanaRequest(path, token) {
   const res = await fetch(`${ASANA_BASE}${path}`, {
     headers: { 'Authorization': `Bearer ${token}` },
   });
 
   if (!res.ok) {
+    // Rate limit: wait and retry once
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('retry-after') || '2') * 1000;
+      console.log(`Rate limited on ${path}, retrying in ${retryAfter}ms`);
+      await new Promise(r => setTimeout(r, retryAfter));
+      const retry = await fetch(`${ASANA_BASE}${path}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (retry.ok) return retry.json();
+    }
     const err = await res.text();
     console.error(`Asana API error ${res.status} on ${path}:`, err);
     return null;
@@ -22,38 +38,47 @@ async function asanaRequest(path, token) {
   return res.json();
 }
 
-async function getProjectsFromPortfolios(token) {
-  const allProjects = [];
+// Process items in parallel with concurrency limit
+async function parallelMap(items, fn, concurrency) {
+  const results = [];
+  let index = 0;
 
-  for (const portfolioGid of PORTFOLIOS) {
-    let offset = null;
-    do {
-      const url = `/portfolios/${portfolioGid}/items?opt_fields=name,completed,completed_at,owner,owner.name,start_on,due_on,created_at,permalink_url&limit=100${offset ? `&offset=${offset}` : ''}`;
-      const result = await asanaRequest(url, token);
-      if (result?.data) {
-        allProjects.push(...result.data);
-      }
-      offset = result?.next_page?.offset || null;
-    } while (offset);
+  async function worker() {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i], i);
+    }
   }
 
-  return allProjects;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+async function getProjectsFromPortfolios(token) {
+  // Fetch all 3 portfolios in parallel
+  const portfolioResults = await Promise.all(
+    PORTFOLIOS.map(async (portfolioGid) => {
+      const allItems = [];
+      let offset = null;
+      do {
+        const url = `/portfolios/${portfolioGid}/items?opt_fields=name,completed,completed_at,owner,owner.name,start_on,due_on,created_at,permalink_url&limit=100${offset ? `&offset=${offset}` : ''}`;
+        const result = await asanaRequest(url, token);
+        if (result?.data) allItems.push(...result.data);
+        offset = result?.next_page?.offset || null;
+      } while (offset);
+      return allItems;
+    })
+  );
+
+  return portfolioResults.flat();
 }
 
 async function getStatusUpdatesForProject(projectGid, token) {
-  const updates = [];
-  let offset = null;
-
-  do {
-    const url = `/status_updates?parent=${projectGid}&opt_fields=title,text,status_type,created_at&limit=100${offset ? `&offset=${offset}` : ''}`;
-    const result = await asanaRequest(url, token);
-    if (result?.data) {
-      updates.push(...result.data);
-    }
-    offset = result?.next_page?.offset || null;
-  } while (offset);
-
-  return updates;
+  // Only fetch first page — most projects won't have >100 DIIO updates
+  const url = `/status_updates?parent=${projectGid}&opt_fields=title,text,status_type,created_at&limit=100`;
+  const result = await asanaRequest(url, token);
+  return result?.data || [];
 }
 
 function parseMetricsFromUpdates(updates) {
@@ -69,7 +94,7 @@ function parseMetricsFromUpdates(updates) {
     const createdAt = update.created_at;
 
     // Detect meetings: title contains "Reunión" or text starts with "📋 Resumen reunión"
-    if (title.includes('Reunión') || text.includes('Resumen reunión')) {
+    if (title.includes('Reunión') || title.includes('Reunion') || text.includes('Resumen reunión')) {
       meetings++;
       if (createdAt) meetingDates.push(createdAt);
 
@@ -91,9 +116,7 @@ function parseMetricsFromUpdates(updates) {
     conversations,
     totalUpdates: meetings + conversations,
     totalMinutes,
-    totalHours: Math.round((totalMinutes / 60) * 10) / 10, // 1 decimal
-    meetingDates,
-    conversationDates,
+    totalHours: Math.round((totalMinutes / 60) * 10) / 10,
     firstActivity: [...meetingDates, ...conversationDates].sort()[0] || null,
     lastActivity: [...meetingDates, ...conversationDates].sort().pop() || null,
   };
@@ -102,35 +125,32 @@ function parseMetricsFromUpdates(updates) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1200');
 
   const token = process.env.ASANA_PAT;
   if (!token) {
     return res.status(500).json({ error: 'ASANA_PAT not configured' });
   }
 
-  // Optional: fetch metrics for a single project
   const { projectGid } = req.query;
 
   try {
     if (projectGid) {
-      // Single project mode
       const updates = await getStatusUpdatesForProject(projectGid, token);
       const metrics = parseMetricsFromUpdates(updates);
       return res.status(200).json({ projectGid, ...metrics });
     }
 
-    // All projects mode: fetch all projects then their status updates
+    // Fetch all projects from portfolios (parallel)
     const projects = await getProjectsFromPortfolios(token);
 
-    // Process in batches to avoid overwhelming Asana API
-    const results = [];
+    console.log(`Fetching metrics for ${projects.length} projects (concurrency: ${CONCURRENCY})`);
 
-    for (const project of projects) {
+    // Fetch status updates for all projects in parallel with concurrency limit
+    const results = await parallelMap(projects, async (project) => {
       const updates = await getStatusUpdatesForProject(project.gid, token);
       const metrics = parseMetricsFromUpdates(updates);
 
-      // Calculate calendar days
       const start = project.start_on || project.created_at?.split('T')[0];
       let calendarDays = null;
       if (start) {
@@ -139,7 +159,7 @@ export default async function handler(req, res) {
         calendarDays = Math.max(0, Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)));
       }
 
-      results.push({
+      return {
         gid: project.gid,
         name: project.name,
         owner: project.owner?.name || 'Sin asignar',
@@ -150,8 +170,8 @@ export default async function handler(req, res) {
         permalink: project.permalink_url,
         calendarDays,
         ...metrics,
-      });
-    }
+      };
+    }, CONCURRENCY);
 
     // Sort by total hours descending
     results.sort((a, b) => b.totalHours - a.totalHours);
