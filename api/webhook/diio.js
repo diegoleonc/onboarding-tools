@@ -1,4 +1,5 @@
 // Vercel Serverless Function: Receive DIIO webhook and update Asana project status
+// Handles both meeting.finished and written_conversation.finished events
 import crypto from 'crypto';
 
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
@@ -8,6 +9,9 @@ const PORTFOLIOS = [
   '1203602528347970', // 02 Upgrade
   '1203602528347974', // 03 Reonboarding
 ];
+
+// Supported event types
+const SUPPORTED_ACTIONS = ['meeting.finished', 'written_conversation.finished'];
 
 // ===== SIGNATURE VALIDATION =====
 function validateSignature(req, body) {
@@ -41,6 +45,192 @@ function extractCompanyName(meetingName) {
   }
 
   return meetingName.trim();
+}
+
+// ===== EXTRACT INFO FROM WHATSAPP CONVERSATION =====
+function extractConversationInfo(body) {
+  const participants = body.participants || [];
+
+  // Separate contacts (clients) from users (implementers)
+  const contacts = [];
+  const users = [];
+
+  if (Array.isArray(participants)) {
+    for (const p of participants) {
+      if (p.email) {
+        users.push(p); // Users have email (implementers)
+      } else if (p.name || p.phone_numbers) {
+        contacts.push(p); // Contacts have name/phone (clients)
+      }
+    }
+  }
+
+  // Also check if participants is an object with specific structure
+  if (!Array.isArray(participants) && typeof participants === 'object') {
+    if (participants.users) users.push(...(Array.isArray(participants.users) ? participants.users : [participants.users]));
+    if (participants.contacts) contacts.push(...(Array.isArray(participants.contacts) ? participants.contacts : [participants.contacts]));
+  }
+
+  // Extract best candidate for company name from contact names
+  const contactNames = contacts.map(c => c.name).filter(Boolean);
+  const userEmails = users.map(u => u.email).filter(Boolean);
+
+  return { contactNames, userEmails, contacts, users };
+}
+
+// ===== FIND ASANA PROJECT FOR WHATSAPP CONVERSATION =====
+async function findAsanaProjectForConversation(contactNames, userEmails, token) {
+  // Strategy 1: Search by contact names (most reliable if contact = company)
+  for (const contactName of contactNames) {
+    // Clean the contact name - remove common prefixes/suffixes
+    const cleanName = contactName
+      .replace(/^\+?\d[\d\s-]+/, '') // Remove phone number prefixes
+      .replace(/\s*\(.*?\)\s*/g, '') // Remove parenthetical info
+      .trim();
+
+    if (cleanName.length < 2) continue;
+
+    // Try typeahead search
+    const searchResults = await asanaRequest(
+      `/workspaces/592491987465948/typeahead?resource_type=project&query=${encodeURIComponent(cleanName)}&count=10`,
+      token
+    );
+
+    if (searchResults?.data?.length > 0) {
+      for (const result of searchResults.data) {
+        const projectName = result.name.toLowerCase();
+        const searchName = cleanName.toLowerCase();
+
+        if (projectName.includes(searchName)) {
+          const project = await asanaRequest(
+            `/projects/${result.gid}?opt_fields=completed,name`,
+            token
+          );
+          if (project?.data && !project.data.completed) {
+            return { project: project.data, matchedBy: 'contact_name_typeahead', matchedValue: cleanName };
+          }
+        }
+      }
+    }
+
+    // Try portfolio scan
+    for (const portfolioGid of PORTFOLIOS) {
+      const items = await asanaRequest(
+        `/portfolios/${portfolioGid}/items?opt_fields=name,completed&limit=100`,
+        token
+      );
+
+      if (items?.data) {
+        for (const project of items.data) {
+          if (project.completed) continue;
+          const projectNameLower = project.name.toLowerCase();
+          const searchNameLower = cleanName.toLowerCase();
+
+          if (projectNameLower.includes(searchNameLower) || searchNameLower.includes(projectNameLower.split(' ')[0])) {
+            return { project, matchedBy: 'contact_name_portfolio', matchedValue: cleanName };
+          }
+
+          // Fuzzy: all words match
+          const words = searchNameLower.split(/\s+/).filter(w => w.length > 2);
+          if (words.length > 1 && words.every(w => projectNameLower.includes(w))) {
+            return { project, matchedBy: 'contact_name_fuzzy', matchedValue: cleanName };
+          }
+        }
+      }
+    }
+  }
+
+  // Strategy 2: Match by implementer email → project owner (unique match only)
+  if (userEmails.length > 0) {
+    const candidateProjects = [];
+    for (const portfolioGid of PORTFOLIOS) {
+      const items = await asanaRequest(
+        `/portfolios/${portfolioGid}/items?opt_fields=name,completed,owner,owner.email&limit=100`,
+        token
+      );
+
+      if (items?.data) {
+        const owned = items.data.filter(
+          p => !p.completed && userEmails.includes(p.owner?.email)
+        );
+        candidateProjects.push(...owned);
+      }
+    }
+
+    // Only return if there's exactly one match (otherwise ambiguous)
+    if (candidateProjects.length === 1) {
+      return { project: candidateProjects[0], matchedBy: 'implementer_email', matchedValue: userEmails[0] };
+    }
+
+    // If multiple matches, log for debugging but don't return
+    if (candidateProjects.length > 1) {
+      console.log(`Multiple projects (${candidateProjects.length}) found for implementer ${userEmails[0]}: ${candidateProjects.map(p => p.name).join(', ')}`);
+    }
+  }
+
+  return null;
+}
+
+// ===== CREATE ASANA STATUS UPDATE FOR CONVERSATION =====
+async function createConversationStatusUpdate(projectGid, body, matchInfo, token) {
+  const tv = body.tracker_values || {};
+  const summary = tv.summary?.value || 'Sin resumen disponible';
+  const pains = tv.customer_pains?.value;
+  const objections = tv.objections?.value;
+  const unresolvedQueries = tv.unresolve_queries?.value;
+  const sentiment = tv.sentiment?.value;
+  const playbook = body.playbook?.name || '';
+
+  const today = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  // Build status update text
+  let text = `💬 Resumen conversación WhatsApp — ${today}`;
+  if (playbook) text += `\nPlaybook: ${playbook}`;
+  text += `\n\n${summary}`;
+
+  if (pains) {
+    text += `\n\n🔴 Dolores del cliente:\n${pains}`;
+  }
+
+  if (objections) {
+    text += `\n\n⚠️ Objeciones:\n${objections}`;
+  }
+
+  if (unresolvedQueries) {
+    text += `\n\n❓ Temas pendientes:\n${unresolvedQueries}`;
+  }
+
+  // Participant info
+  const info = extractConversationInfo(body);
+  if (info.contactNames.length > 0 || info.userEmails.length > 0) {
+    const parts = [];
+    if (info.contactNames.length > 0) parts.push(`Cliente: ${info.contactNames.join(', ')}`);
+    if (info.userEmails.length > 0) parts.push(`Implementador: ${info.users.map(u => u.name || u.email).join(', ')}`);
+    text += `\n\n👥 Participantes: ${parts.join(' | ')}`;
+  }
+
+  text += `\n\n🔗 Match: ${matchInfo.matchedBy} (${matchInfo.matchedValue})`;
+  text += `\n— Actualización automática vía DIIO (WhatsApp)`;
+
+  // Determine status color based on sentiment
+  let statusType = 'on_track';
+  if (sentiment !== undefined && sentiment !== null) {
+    const sentimentNum = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
+    if (sentimentNum <= 2) statusType = 'off_track';
+    else if (sentimentNum <= 3) statusType = 'at_risk';
+    else statusType = 'on_track';
+  }
+
+  const response = await asanaRequest('/status_updates', token, 'POST', {
+    data: {
+      parent: projectGid,
+      status_type: statusType,
+      title: `WhatsApp ${today} — Resumen DIIO`,
+      text: text,
+    },
+  });
+
+  return response;
 }
 
 // ===== FIND MATCHING ASANA PROJECT =====
@@ -266,54 +456,105 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  // Only process finished meetings
+  // Check if this is a supported event
   const action = body.action;
-  if (action !== 'meeting.finished') {
-    logEvent(action, body.name, null, true, 'Skipped - not a finished meeting');
+  if (!SUPPORTED_ACTIONS.includes(action)) {
+    logEvent(action, body.name, null, true, 'Skipped - unsupported event');
     return res.status(200).json({ status: 'ok', message: `Skipped event: ${action}` });
   }
 
   try {
-    const meetingName = body.name || '';
-    const companyName = extractCompanyName(meetingName);
-    const sellerEmails = body.attendees?.sellers?.map(s => s.email) || [];
+    // ===== MEETING FINISHED =====
+    if (action === 'meeting.finished') {
+      const meetingName = body.name || '';
+      const companyName = extractCompanyName(meetingName);
+      const sellerEmails = body.attendees?.sellers?.map(s => s.email) || [];
 
-    logEvent(action, meetingName, null, true, `Extracted company: "${companyName}"`);
+      logEvent(action, meetingName, null, true, `Extracted company: "${companyName}"`);
 
-    // Find the matching Asana project
-    const project = await findAsanaProject(companyName, sellerEmails, token);
+      const project = await findAsanaProject(companyName, sellerEmails, token);
 
-    if (!project) {
-      logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`);
-      return res.status(200).json({
-        status: 'warning',
-        message: `No matching Asana project found for "${companyName}"`,
-        meetingName,
-        companyExtracted: companyName,
-      });
+      if (!project) {
+        logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`);
+        return res.status(200).json({
+          status: 'warning',
+          message: `No matching Asana project found for "${companyName}"`,
+          meetingName,
+          companyExtracted: companyName,
+        });
+      }
+
+      const statusUpdate = await createStatusUpdate(project.gid, body, token);
+
+      if (statusUpdate) {
+        logEvent(action, meetingName, project.name, true, 'Status update created');
+        return res.status(200).json({
+          status: 'success',
+          message: `Status update created on "${project.name}"`,
+          projectGid: project.gid,
+          statusUpdateGid: statusUpdate.data?.gid,
+        });
+      } else {
+        logEvent(action, meetingName, project.name, false, 'Failed to create status update');
+        return res.status(500).json({
+          status: 'error',
+          message: `Failed to create status update on "${project.name}"`,
+        });
+      }
     }
 
-    // Create status update on the project
-    const statusUpdate = await createStatusUpdate(project.gid, body, token);
+    // ===== WHATSAPP CONVERSATION FINISHED =====
+    if (action === 'written_conversation.finished') {
+      const convInfo = extractConversationInfo(body);
+      const convId = body.id || 'unknown';
 
-    if (statusUpdate) {
-      logEvent(action, meetingName, project.name, true, 'Status update created');
-      return res.status(200).json({
-        status: 'success',
-        message: `Status update created on "${project.name}"`,
-        projectGid: project.gid,
-        statusUpdateGid: statusUpdate.data?.gid,
-      });
-    } else {
-      logEvent(action, meetingName, project.name, false, 'Failed to create status update');
-      return res.status(500).json({
-        status: 'error',
-        message: `Failed to create status update on "${project.name}"`,
-      });
+      logEvent(action, convId, null, true,
+        `Contacts: [${convInfo.contactNames.join(', ')}] | Users: [${convInfo.userEmails.join(', ')}]`
+      );
+
+      const matchResult = await findAsanaProjectForConversation(
+        convInfo.contactNames, convInfo.userEmails, token
+      );
+
+      if (!matchResult) {
+        logEvent(action, convId, null, false,
+          `No project found. Contacts: [${convInfo.contactNames.join(', ')}], Users: [${convInfo.userEmails.join(', ')}]`
+        );
+        return res.status(200).json({
+          status: 'warning',
+          message: 'No matching Asana project found for WhatsApp conversation',
+          conversationId: convId,
+          contactNames: convInfo.contactNames,
+          userEmails: convInfo.userEmails,
+        });
+      }
+
+      const statusUpdate = await createConversationStatusUpdate(
+        matchResult.project.gid, body, matchResult, token
+      );
+
+      if (statusUpdate) {
+        logEvent(action, convId, matchResult.project.name, true,
+          `Status update created (matched by ${matchResult.matchedBy}: ${matchResult.matchedValue})`
+        );
+        return res.status(200).json({
+          status: 'success',
+          message: `Status update created on "${matchResult.project.name}" from WhatsApp`,
+          projectGid: matchResult.project.gid,
+          statusUpdateGid: statusUpdate.data?.gid,
+          matchedBy: matchResult.matchedBy,
+        });
+      } else {
+        logEvent(action, convId, matchResult.project.name, false, 'Failed to create status update');
+        return res.status(500).json({
+          status: 'error',
+          message: `Failed to create status update on "${matchResult.project.name}"`,
+        });
+      }
     }
   } catch (error) {
     console.error('Webhook processing error:', error);
-    logEvent(action, body.name, null, false, error.message);
+    logEvent(action, body.name || body.id, null, false, error.message);
     return res.status(500).json({ error: error.message });
   }
 }
