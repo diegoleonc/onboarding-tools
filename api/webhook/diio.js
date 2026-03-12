@@ -13,6 +13,18 @@ const PORTFOLIOS = [
 // Supported event types
 const SUPPORTED_ACTIONS = ['meeting.finished', 'written_conversation.finished'];
 
+// Status severity order (higher = worse)
+const STATUS_SEVERITY = {
+  'on_track': 0,    // En curso
+  'at_risk': 1,     // En riesgo
+  'off_track': 2,   // Con retraso
+  'on_hold': 3,     // En espera (manual only — never set by webhook)
+  'complete': 4,    // Finalizado (manual only — never set by webhook)
+};
+
+// Human-managed statuses that the webhook should NEVER override
+const MANUAL_ONLY_STATUSES = ['on_hold', 'complete'];
+
 // ===== SIGNATURE VALIDATION =====
 function validateSignature(req, body) {
   const signingSecret = process.env.DIIO_SIGNING_SECRET;
@@ -45,6 +57,113 @@ function extractCompanyName(meetingName) {
   }
 
   return meetingName.trim();
+}
+
+// ===== SMART STATUS COMPUTATION (Option 4) =====
+// Combines: project due date + DIIO sentiment + current Asana status
+// Rules:
+//   1. If current status is "En espera" or "Finalizado" → don't touch it
+//   2. If project is past due → always "Con retraso" (date wins over sentiment)
+//   3. If project is near deadline (≤5 days) → minimum "En riesgo"
+//   4. If project is on time → sentiment decides: bad→En riesgo, good→En curso
+//   5. If no due date → sentiment only decides between En curso / En riesgo
+async function computeSmartStatus(projectGid, sentiment, token) {
+  // Fetch project details: due date, current status, task completion
+  const projectData = await asanaRequest(
+    `/projects/${projectGid}?opt_fields=due_on,current_status_update,current_status_update.status_type,custom_fields,custom_fields.name,custom_fields.display_value`,
+    token
+  );
+
+  const project = projectData?.data;
+  if (!project) {
+    // Fallback: just use sentiment
+    const fallbackStatus = computeSentimentStatus(sentiment);
+    return {
+      statusType: fallbackStatus,
+      skipped: false,
+      reason: `Sin datos del proyecto, sentiment: ${sentiment ?? 'N/A'}`,
+    };
+  }
+
+  // Check current Asana status
+  const currentStatusType = project.current_status_update?.status_type;
+
+  // Rule 1: Never override manual statuses
+  if (MANUAL_ONLY_STATUSES.includes(currentStatusType)) {
+    return {
+      statusType: currentStatusType,
+      skipped: true,
+      reason: `Estado actual "${currentStatusType}" es gestionado manualmente`,
+    };
+  }
+
+  // Get due date
+  const dueOn = project.due_on; // "YYYY-MM-DD" or null
+
+  // Calculate date-based status
+  let dateStatus = null;
+  let daysRemaining = null;
+
+  if (dueOn) {
+    const now = new Date();
+    const due = new Date(dueOn + 'T23:59:59');
+    daysRemaining = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+
+    if (daysRemaining < 0) {
+      dateStatus = 'off_track'; // Past due → Con retraso (immovable)
+    } else if (daysRemaining <= 5) {
+      dateStatus = 'at_risk'; // Near deadline → minimum En riesgo
+    } else {
+      dateStatus = 'on_track'; // On time
+    }
+  }
+
+  // Calculate sentiment-based status
+  const sentimentStatus = computeSentimentStatus(sentiment);
+
+  // Combine: take the WORST between date and sentiment
+  let finalStatus;
+  let reason;
+
+  if (dateStatus === 'off_track') {
+    // Rule 2: Past due always wins → Con retraso
+    finalStatus = 'off_track';
+    reason = `Proyecto pasado de fecha (${Math.abs(daysRemaining)} días de atraso)`;
+  } else if (dateStatus === 'at_risk') {
+    // Rule 3: Near deadline → minimum En riesgo, sentiment can make it worse (not better)
+    finalStatus = STATUS_SEVERITY[sentimentStatus] > STATUS_SEVERITY['at_risk']
+      ? sentimentStatus
+      : 'at_risk';
+    reason = `Cerca del deadline (${daysRemaining} días), sentiment: ${sentiment ?? 'N/A'}`;
+  } else if (dateStatus === 'on_track') {
+    // Rule 4: On time → sentiment decides
+    finalStatus = sentimentStatus;
+    reason = `A tiempo (${daysRemaining} días restantes), sentiment: ${sentiment ?? 'N/A'}`;
+  } else {
+    // Rule 5: No due date → sentiment only
+    finalStatus = sentimentStatus;
+    reason = `Sin fecha límite, sentiment: ${sentiment ?? 'N/A'}`;
+  }
+
+  return {
+    statusType: finalStatus,
+    skipped: false,
+    reason,
+    daysRemaining,
+    dateStatus,
+    sentimentStatus,
+    currentStatusType,
+  };
+}
+
+// Simple sentiment → status mapping (used as one input to the composite)
+function computeSentimentStatus(sentiment) {
+  if (sentiment === undefined || sentiment === null) return 'on_track';
+  const val = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
+  if (isNaN(val)) return 'on_track';
+  if (val <= 2) return 'at_risk';    // Bad sentiment → En riesgo (not Con retraso — only date can set that)
+  if (val <= 3) return 'at_risk';    // Neutral → En riesgo
+  return 'on_track';                  // Good sentiment → En curso
 }
 
 // ===== EXTRACT INFO FROM WHATSAPP CONVERSATION =====
@@ -181,6 +300,14 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   const sentiment = tv.sentiment?.value;
   const playbook = body.playbook?.name || '';
 
+  // Compute smart status
+  const statusResult = await computeSmartStatus(projectGid, sentiment, token);
+
+  // If status is manually managed, still create the update but preserve the status
+  if (statusResult.skipped) {
+    console.log(`Skipping status change for project ${projectGid}: ${statusResult.reason}`);
+  }
+
   const today = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   // Build status update text
@@ -210,21 +337,13 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   }
 
   text += `\n\n🔗 Match: ${matchInfo.matchedBy} (${matchInfo.matchedValue})`;
+  text += `\n📊 Estado: ${statusResult.reason}`;
   text += `\n— Actualización automática vía DIIO (WhatsApp)`;
-
-  // Determine status color based on sentiment
-  let statusType = 'on_track';
-  if (sentiment !== undefined && sentiment !== null) {
-    const sentimentNum = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
-    if (sentimentNum <= 2) statusType = 'off_track';
-    else if (sentimentNum <= 3) statusType = 'at_risk';
-    else statusType = 'on_track';
-  }
 
   const response = await asanaRequest('/status_updates', token, 'POST', {
     data: {
       parent: projectGid,
-      status_type: statusType,
+      status_type: statusResult.statusType,
       title: `WhatsApp ${today} — Resumen DIIO`,
       text: text,
     },
@@ -325,6 +444,13 @@ async function createStatusUpdate(projectGid, meetingData, token) {
     ? new Date(meetingData.scheduled_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : new Date().toLocaleDateString('es-CL');
 
+  // Compute smart status
+  const statusResult = await computeSmartStatus(projectGid, sentiment, token);
+
+  if (statusResult.skipped) {
+    console.log(`Skipping status change for project ${projectGid}: ${statusResult.reason}`);
+  }
+
   // Build status update text
   let text = `📋 Resumen reunión ${meetingDate}`;
   if (duration) text += ` (${duration} min)`;
@@ -360,14 +486,6 @@ async function createStatusUpdate(projectGid, meetingData, token) {
     }
   }
 
-  // Determine status color based on sentiment (1-5 scale)
-  let statusType = 'on_track';
-  if (sentiment !== undefined && sentiment !== null) {
-    if (sentiment <= 2) statusType = 'off_track';
-    else if (sentiment <= 3) statusType = 'at_risk';
-    else statusType = 'on_track';
-  }
-
   // Participants info
   const sellers = meetingData.attendees?.sellers?.map(s => s.name).join(', ') || '';
   const customers = meetingData.attendees?.customers?.map(c => c.name).join(', ') || '';
@@ -375,13 +493,14 @@ async function createStatusUpdate(projectGid, meetingData, token) {
     text += `\n\n👥 Participantes: ${[sellers, customers].filter(Boolean).join(' | ')}`;
   }
 
-  text += `\n\n— Actualización automática vía DIIO`;
+  text += `\n\n📊 Estado: ${statusResult.reason}`;
+  text += `\n— Actualización automática vía DIIO`;
 
   // Create the status update via Asana API
   const response = await asanaRequest('/status_updates', token, 'POST', {
     data: {
       parent: projectGid,
-      status_type: statusType,
+      status_type: statusResult.statusType,
       title: `Reunión ${meetingDate} — Resumen DIIO`,
       text: text,
     },
