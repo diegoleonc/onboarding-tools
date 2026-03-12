@@ -61,11 +61,33 @@ function extractCompanyName(meetingName) {
   return meetingName.trim() || null;
 }
 
+// ===== CHECK IF PROJECT BELONGS TO OUR PORTFOLIOS =====
+async function isProjectInPortfolios(projectGid, token) {
+  // Check project's portfolio memberships
+  const projectData = await asanaRequest(
+    `/projects/${projectGid}?opt_fields=completed,name,current_status_update.status_type`,
+    token
+  );
+  if (!projectData?.data || projectData.data.completed) return null;
+
+  // Verify it exists in one of our 3 portfolios
+  for (const portfolioGid of PORTFOLIOS) {
+    const items = await asanaRequest(
+      `/portfolios/${portfolioGid}/items?opt_fields=name&limit=100`,
+      token
+    );
+    if (items?.data?.some((p) => p.gid === projectGid)) {
+      return projectData.data;
+    }
+  }
+  return null; // Not in our portfolios
+}
+
 // ===== FIND ASANA PROJECT =====
 async function findAsanaProject(companyName, sellerEmails, token) {
   if (!companyName) return null;
 
-  // Strategy 1: Typeahead search
+  // Strategy 1: Typeahead search (then verify it's in our portfolios)
   const searchResults = await asanaRequest(
     `/workspaces/${WORKSPACE}/typeahead?resource_type=project&query=${encodeURIComponent(companyName)}&count=10`,
     token
@@ -76,13 +98,8 @@ async function findAsanaProject(companyName, sellerEmails, token) {
       const projectName = result.name.toLowerCase();
       const searchName = companyName.toLowerCase();
       if (projectName.includes(searchName)) {
-        const project = await asanaRequest(
-          `/projects/${result.gid}?opt_fields=completed,name`,
-          token
-        );
-        if (project?.data && !project.data.completed) {
-          return project.data;
-        }
+        const project = await isProjectInPortfolios(result.gid, token);
+        if (project) return project;
       }
     }
   }

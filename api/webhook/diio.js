@@ -221,12 +221,9 @@ async function findAsanaProjectForConversation(contactNames, userEmails, token) 
         const searchName = cleanName.toLowerCase();
 
         if (projectName.includes(searchName)) {
-          const project = await asanaRequest(
-            `/projects/${result.gid}?opt_fields=completed,name`,
-            token
-          );
-          if (project?.data && !project.data.completed) {
-            return { project: project.data, matchedBy: 'contact_name_typeahead', matchedValue: cleanName };
+          const project = await isProjectInPortfolios(result.gid, token);
+          if (project) {
+            return { project, matchedBy: 'contact_name_typeahead', matchedValue: cleanName };
           }
         }
       }
@@ -352,30 +349,42 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   return response;
 }
 
+// ===== CHECK IF PROJECT BELONGS TO OUR PORTFOLIOS =====
+async function isProjectInPortfolios(projectGid, token) {
+  const projectData = await asanaRequest(
+    `/projects/${projectGid}?opt_fields=completed,name`,
+    token
+  );
+  if (!projectData?.data || projectData.data.completed) return null;
+
+  for (const portfolioGid of PORTFOLIOS) {
+    const items = await asanaRequest(
+      `/portfolios/${portfolioGid}/items?opt_fields=name&limit=100`,
+      token
+    );
+    if (items?.data?.some((p) => p.gid === projectGid)) {
+      return projectData.data;
+    }
+  }
+  return null;
+}
+
 // ===== FIND MATCHING ASANA PROJECT =====
 async function findAsanaProject(companyName, sellerEmails, token) {
-  // Strategy 1: Search by project name using typeahead
+  // Strategy 1: Typeahead search (then verify it's in our 3 portfolios)
   const searchResults = await asanaRequest(
     `/workspaces/592491987465948/typeahead?resource_type=project&query=${encodeURIComponent(companyName)}&count=10`,
     token
   );
 
   if (searchResults?.data?.length > 0) {
-    // Find the best match among active projects in our portfolios
     for (const result of searchResults.data) {
       const projectName = result.name.toLowerCase();
       const searchName = companyName.toLowerCase();
 
-      // Check if company name appears in project name
       if (projectName.includes(searchName)) {
-        // Verify it's an active project (not completed)
-        const project = await asanaRequest(
-          `/projects/${result.gid}?opt_fields=completed,name`,
-          token
-        );
-        if (project?.data && !project.data.completed) {
-          return project.data;
-        }
+        const project = await isProjectInPortfolios(result.gid, token);
+        if (project) return project;
       }
     }
   }
