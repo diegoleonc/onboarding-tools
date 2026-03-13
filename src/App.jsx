@@ -7,24 +7,31 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Navigation */}
-      <nav className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+      <nav className="brand-gradient sticky top-0 z-50 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16">
+            {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">M</span>
+              <img src="/isotipo.png" alt="Multivende" className="h-8 w-8" />
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-white tracking-wide" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  MULTIVENDE
+                </span>
+                <span className="text-xs font-medium text-white/60 hidden sm:inline border-l border-white/20 pl-2">
+                  Onboarding Ops
+                </span>
               </div>
-              <span className="text-lg font-bold text-slate-800">Multivende</span>
-              <span className="text-sm text-slate-400 hidden sm:inline">Onboarding Ops</span>
             </div>
+
+            {/* Nav Links */}
             <div className="flex items-center gap-1">
               <NavLink
                 to="/dashboard"
                 className={({ isActive }) =>
                   `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-white/20 text-white shadow-sm backdrop-blur-sm'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
                   }`
                 }
               >
@@ -36,8 +43,8 @@ function App() {
                 className={({ isActive }) =>
                   `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-white/20 text-white shadow-sm backdrop-blur-sm'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
                   }`
                 }
               >
@@ -57,6 +64,16 @@ function App() {
           <Route path="/esfuerzo" element={<Esfuerzo />} />
         </Routes>
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200 bg-white py-4 mt-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <img src="/logo-multivende.png" alt="Multivende" className="h-5 opacity-60" />
+          </div>
+          <span className="text-xs text-slate-400">Onboarding Operations Platform</span>
+        </div>
+      </footer>
     </div>
   )
 }

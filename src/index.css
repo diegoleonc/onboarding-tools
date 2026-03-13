@@ -1,8 +1,54 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Oswald:wght@400;500;600;700&display=swap');
 
 @layer base {
   body {
-    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     @apply bg-slate-50 text-slate-800 antialiased;
   }
+
+  h1, h2, h3 {
+    font-family: 'Poppins', system-ui, sans-serif;
+  }
+}
+
+/* Multivende Brand Colors as CSS variables */
+:root {
+  --mv-navy: #2B4063;
+  --mv-blue: #6681C6;
+  --mv-green: #54CC85;
+  --mv-pink: #D95FB6;
+  --mv-red: #F05B54;
+  --mv-yellow: #F8D63C;
+  --mv-orange: #FC9B27;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Brand gradient for nav and hero sections */
+.brand-gradient {
+  background: linear-gradient(135deg, #2B4063 0%, #3d5a87 50%, #6681C6 100%);
+}
+
+/* Subtle card hover */
+.card-hover {
+  transition: all 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 4px 20px rgba(43, 64, 99, 0.08);
+  transform: translateY(-1px);
 }

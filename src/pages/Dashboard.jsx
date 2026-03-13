@@ -3,6 +3,19 @@ import { BarChart3, AlertTriangle, Users, Globe, Link2, Activity, Clock, Trendin
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
 import { useAsanaProjects } from '../hooks/useAsanaProjects'
 
+// Multivende brand colors
+const BRAND = {
+  navy: '#2B4063',
+  blue: '#6681C6',
+  green: '#54CC85',
+  pink: '#D95FB6',
+  red: '#F05B54',
+  yellow: '#F8D63C',
+  orange: '#FC9B27',
+}
+
+const CHART_COLORS = [BRAND.blue, BRAND.pink, BRAND.orange, BRAND.green, BRAND.navy, BRAND.red, BRAND.yellow, '#8b5cf6']
+
 const TABS = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'sla', label: 'SLA & Tiempos', icon: Clock },
@@ -11,7 +24,9 @@ const TABS = [
   { id: 'pais', label: 'País', icon: Globe },
 ]
 
-const CHART_COLORS = ['#3b82f6', '#ec4899', '#f59e0b', '#8b5cf6', '#06b6d4', '#10b981', '#f97316', '#6366f1']
+const tooltipStyle = {
+  contentStyle: { fontFamily: 'Poppins', borderRadius: 12, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }
+}
 
 function getStatusKey(project) {
   return project.statusType || (
@@ -56,7 +71,7 @@ export default function Dashboard() {
   if (loading && active.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <Loader2 className="animate-spin text-blue-600" size={40} />
+        <Loader2 className="animate-spin" size={40} style={{ color: BRAND.blue }} />
         <p className="text-slate-500 text-sm">Cargando datos de Asana...</p>
       </div>
     )
@@ -65,10 +80,10 @@ export default function Dashboard() {
   if (error && active.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <AlertTriangle className="text-red-500" size={40} />
-        <p className="text-red-600 font-medium">Error al cargar datos</p>
+        <AlertTriangle size={40} style={{ color: BRAND.red }} />
+        <p className="font-medium" style={{ color: BRAND.red }}>Error al cargar datos</p>
         <p className="text-slate-500 text-sm max-w-md text-center">{error}</p>
-        <button onClick={refresh} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+        <button onClick={refresh} className="px-4 py-2 text-white rounded-lg text-sm hover:opacity-90 transition-opacity" style={{ backgroundColor: BRAND.navy }}>
           Reintentar
         </button>
       </div>
@@ -77,15 +92,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-8 text-white">
-        <div className="flex items-center justify-between">
+      {/* Hero Header */}
+      <div className="brand-gradient rounded-2xl p-8 text-white relative overflow-hidden">
+        <img src="/isotipo.png" alt="" className="absolute right-6 top-1/2 -translate-y-1/2 h-24 opacity-10" />
+        <div className="flex items-center justify-between relative z-10">
           <div>
-            <h1 className="text-2xl font-bold mb-1">Onboarding Dashboard</h1>
-            <p className="text-slate-400 text-sm">
+            <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: 'Poppins, sans-serif' }}>Onboarding Dashboard</h1>
+            <p className="text-white/60 text-sm">
               Datos en tiempo real desde Asana
               {meta?.fetchedAt && (
-                <span className="ml-2 text-slate-500">
+                <span className="ml-2 text-white/40">
                   — Actualizado: {new Date(meta.fetchedAt).toLocaleTimeString('es-CL')}
                 </span>
               )}
@@ -94,7 +110,7 @@ export default function Dashboard() {
           <button
             onClick={refresh}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors disabled:opacity-50 backdrop-blur-sm"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             {loading ? 'Actualizando...' : 'Actualizar'}
@@ -103,7 +119,7 @@ export default function Dashboard() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-1.5 overflow-x-auto">
+      <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-1.5 overflow-x-auto shadow-sm">
         {TABS.map(tab => {
           const Icon = tab.icon
           return (
@@ -111,8 +127,9 @@ export default function Dashboard() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-                activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                activeTab === tab.id ? 'text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
               }`}
+              style={activeTab === tab.id ? { backgroundColor: BRAND.navy } : {}}
             >
               <Icon size={16} />
               {tab.label}
@@ -137,16 +154,16 @@ function OverviewTab({ kpis, filters, setFilters, filteredProjects, owners, coun
     <div className="space-y-6">
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <KpiCard icon={<Activity size={20} />} label="Proyectos Activos" value={kpis.active} color="blue" />
-        <KpiCard icon={<TrendingUp size={20} />} label="En Progreso" value={kpis.onTrack} color="green" />
-        <KpiCard icon={<Clock size={20} />} label="En Pausa" value={kpis.onHold} color="amber" />
-        <KpiCard icon={<AlertTriangle size={20} />} label="Retrasados" value={kpis.offTrack} color="red" />
-        <KpiCard icon={<BarChart3 size={20} />} label="Días Promedio" value={kpis.avgDays} color="purple" />
-        <KpiCard icon={<Link2 size={20} />} label="Canales Totales" value={kpis.totalChannels} color="cyan" />
+        <KpiCard icon={<Activity size={20} />} label="Proyectos Activos" value={kpis.active} brandColor={BRAND.blue} />
+        <KpiCard icon={<TrendingUp size={20} />} label="En Progreso" value={kpis.onTrack} brandColor={BRAND.green} />
+        <KpiCard icon={<Clock size={20} />} label="En Pausa" value={kpis.onHold} brandColor={BRAND.yellow} />
+        <KpiCard icon={<AlertTriangle size={20} />} label="Retrasados" value={kpis.offTrack} brandColor={BRAND.red} />
+        <KpiCard icon={<BarChart3 size={20} />} label="Días Promedio" value={kpis.avgDays} brandColor={BRAND.pink} />
+        <KpiCard icon={<Link2 size={20} />} label="Canales Totales" value={kpis.totalChannels} brandColor={BRAND.navy} />
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 card-hover">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <FilterSelect label="Tipo" value={filters.type} onChange={v => setFilters({ ...filters, type: v })} options={['Setup', 'Upgrade', 'Reonboarding']} />
           <FilterSelect label="Estado" value={filters.status} onChange={v => setFilters({ ...filters, status: v })} options={[
@@ -163,18 +180,18 @@ function OverviewTab({ kpis, filters, setFilters, filteredProjects, owners, coun
 
       {/* Alerts */}
       {filteredProjects.filter(p => ['off_track', 'at_risk'].includes(getStatusKey(p))).length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-red-800 mb-3 flex items-center gap-2">
+        <div className="rounded-2xl p-5 border" style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: BRAND.red }}>
             <AlertTriangle size={16} /> Alertas - Proyectos Retrasados / En Riesgo
           </h3>
           <div className="space-y-2">
             {filteredProjects.filter(p => ['off_track', 'at_risk'].includes(getStatusKey(p))).map(p => (
-              <div key={p.gid} className="bg-white border-l-4 border-red-500 rounded-lg p-3 text-sm text-slate-700 flex items-center justify-between">
+              <div key={p.gid} className="bg-white rounded-lg p-3 text-sm text-slate-700 flex items-center justify-between" style={{ borderLeft: `4px solid ${BRAND.red}` }}>
                 <div>
                   <strong>{p.name}</strong> — {p.owner || 'Sin asignar'} — {p.totalChannels || p.channels?.length || 0} canales
                 </div>
                 {p.permalink && (
-                  <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 ml-2">
+                  <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="hover:opacity-70 ml-2" style={{ color: BRAND.blue }}>
                     <ExternalLink size={14} />
                   </a>
                 )}
@@ -189,7 +206,7 @@ function OverviewTab({ kpis, filters, setFilters, filteredProjects, owners, coun
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
+              <tr className="border-b border-slate-200" style={{ backgroundColor: '#F8FAFC' }}>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Proyecto</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Tipo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Estado</th>
@@ -203,7 +220,7 @@ function OverviewTab({ kpis, filters, setFilters, filteredProjects, owners, coun
             <tbody>
               {filteredProjects.map(p => (
                 <tr key={p.gid} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-slate-800 max-w-xs truncate">{p.name}</td>
+                  <td className="px-4 py-3 font-medium max-w-xs truncate" style={{ color: BRAND.navy }}>{p.name}</td>
                   <td className="px-4 py-3"><Badge type={p.type} /></td>
                   <td className="px-4 py-3"><StatusBadge statusKey={getStatusKey(p)} label={p.status} /></td>
                   <td className="px-4 py-3 text-slate-600 text-xs">{p.owner || '-'}</td>
@@ -212,7 +229,7 @@ function OverviewTab({ kpis, filters, setFilters, filteredProjects, owners, coun
                   <td className="px-4 py-3 text-slate-500 text-xs">{p.days ?? '-'}</td>
                   <td className="px-4 py-3">
                     {p.permalink && (
-                      <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700">
+                      <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="hover:opacity-70" style={{ color: BRAND.blue }}>
                         <ExternalLink size={14} />
                       </a>
                     )}
@@ -267,30 +284,14 @@ function SLATab({ active, completed }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card title={`Setup SLA (${setupProjects.length} proyectos)`}>
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-emerald-50 rounded-xl p-4 text-center">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">P50 (Mediana)</div>
-              <div className="text-3xl font-bold text-emerald-700">{setupP50}</div>
-              <div className="text-xs text-slate-500">días</div>
-            </div>
-            <div className="bg-amber-50 rounded-xl p-4 text-center">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">P80</div>
-              <div className="text-3xl font-bold text-amber-700">{setupP80}</div>
-              <div className="text-xs text-slate-500">días</div>
-            </div>
+            <MetricBox label="P50 (Mediana)" value={setupP50} unit="días" color={BRAND.green} />
+            <MetricBox label="P80" value={setupP80} unit="días" color={BRAND.orange} />
           </div>
         </Card>
         <Card title={`Upgrade SLA (${upgradeProjects.length} proyectos)`}>
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-emerald-50 rounded-xl p-4 text-center">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">P50 (Mediana)</div>
-              <div className="text-3xl font-bold text-emerald-700">{upgradeP50 || '-'}</div>
-              <div className="text-xs text-slate-500">días</div>
-            </div>
-            <div className="bg-amber-50 rounded-xl p-4 text-center">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">P80</div>
-              <div className="text-3xl font-bold text-amber-700">{upgradeP80 || '-'}</div>
-              <div className="text-xs text-slate-500">días</div>
-            </div>
+            <MetricBox label="P50 (Mediana)" value={upgradeP50 || '-'} unit="días" color={BRAND.green} />
+            <MetricBox label="P80" value={upgradeP80 || '-'} unit="días" color={BRAND.orange} />
           </div>
         </Card>
       </div>
@@ -301,10 +302,10 @@ function SLATab({ active, completed }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={typeChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fontFamily: 'Poppins' }} />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="dias" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                <Tooltip {...tooltipStyle} />
+                <Bar dataKey="dias" fill={BRAND.blue} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -314,10 +315,10 @@ function SLATab({ active, completed }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={planChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fontFamily: 'Poppins' }} />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="dias" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                <Tooltip {...tooltipStyle} />
+                <Bar dataKey="dias" fill={BRAND.pink} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -328,7 +329,7 @@ function SLATab({ active, completed }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
+              <tr className="border-b border-slate-200" style={{ backgroundColor: '#F8FAFC' }}>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Proyecto</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Tipo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Días</th>
@@ -342,16 +343,10 @@ function SLATab({ active, completed }) {
                 const risk = p.days > limit ? 'red' : p.days > target ? 'yellow' : 'green'
                 return (
                   <tr key={p.gid} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-800 max-w-xs truncate">{p.name}</td>
+                    <td className="px-4 py-3 font-medium max-w-xs truncate" style={{ color: BRAND.navy }}>{p.name}</td>
                     <td className="px-4 py-3"><Badge type={p.type} /></td>
                     <td className="px-4 py-3 text-slate-600">{p.days}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-semibold uppercase ${
-                        risk === 'red' ? 'bg-red-100 text-red-700' : risk === 'yellow' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                      }`}>
-                        {risk === 'red' ? 'Alto' : risk === 'yellow' ? 'Medio' : 'Bajo'}
-                      </span>
-                    </td>
+                    <td className="px-4 py-3"><RiskBadge risk={risk} /></td>
                   </tr>
                 )
               })}
@@ -395,9 +390,9 @@ function EquipoTab({ active, completed }) {
           <Card key={o.name} title={o.name}>
             <div className="space-y-3">
               <StatRow label="Proyectos Activos" value={o.active} />
-              <StatRow label="En Progreso" value={o.onTrack} color="text-emerald-600" />
-              <StatRow label="En Pausa" value={o.onHold} color="text-amber-600" />
-              <StatRow label="Retrasados" value={o.offTrack} color="text-red-600" />
+              <StatRow label="En Progreso" value={o.onTrack} color={BRAND.green} />
+              <StatRow label="En Pausa" value={o.onHold} color={BRAND.orange} />
+              <StatRow label="Retrasados" value={o.offTrack} color={BRAND.red} />
               <StatRow label="Promedio Histórico" value={`${o.avgDays} días`} />
             </div>
           </Card>
@@ -409,13 +404,13 @@ function EquipoTab({ active, completed }) {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fontFamily: 'Poppins' }} />
               <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
+              <Tooltip {...tooltipStyle} />
               <Legend />
-              <Bar dataKey="En Progreso" stackId="a" fill="#22c55e" />
-              <Bar dataKey="En Pausa" stackId="a" fill="#f59e0b" />
-              <Bar dataKey="Retrasados" stackId="a" fill="#ef4444" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="En Progreso" stackId="a" fill={BRAND.green} />
+              <Bar dataKey="En Pausa" stackId="a" fill={BRAND.yellow} />
+              <Bar dataKey="Retrasados" stackId="a" fill={BRAND.red} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -453,18 +448,30 @@ function CanalesTab({ active, completed }) {
             <BarChart data={channelChartData} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis type="number" tick={{ fontSize: 12 }} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={120} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#3b82f6" radius={[0, 6, 6, 0]} />
+              <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fontFamily: 'Poppins' }} width={120} />
+              <Tooltip {...tooltipStyle} />
+              <Bar dataKey="count" fill={BRAND.blue} radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card title="Setup"><div className="text-4xl font-bold text-blue-700 text-center py-4">{avgByType('Setup')}<span className="text-base font-normal text-slate-500 ml-2">canales/proyecto</span></div></Card>
-        <Card title="Upgrade"><div className="text-4xl font-bold text-pink-700 text-center py-4">{avgByType('Upgrade')}<span className="text-base font-normal text-slate-500 ml-2">canales/proyecto</span></div></Card>
-        <Card title="Reonboarding"><div className="text-4xl font-bold text-amber-700 text-center py-4">{avgByType('Reonboarding')}<span className="text-base font-normal text-slate-500 ml-2">canales/proyecto</span></div></Card>
+        <Card title="Setup">
+          <div className="text-4xl font-bold text-center py-4" style={{ color: BRAND.blue }}>
+            {avgByType('Setup')}<span className="text-base font-normal text-slate-500 ml-2">canales/proyecto</span>
+          </div>
+        </Card>
+        <Card title="Upgrade">
+          <div className="text-4xl font-bold text-center py-4" style={{ color: BRAND.pink }}>
+            {avgByType('Upgrade')}<span className="text-base font-normal text-slate-500 ml-2">canales/proyecto</span>
+          </div>
+        </Card>
+        <Card title="Reonboarding">
+          <div className="text-4xl font-bold text-center py-4" style={{ color: BRAND.orange }}>
+            {avgByType('Reonboarding')}<span className="text-base font-normal text-slate-500 ml-2">canales/proyecto</span>
+          </div>
+        </Card>
       </div>
     </div>
   )
@@ -501,7 +508,7 @@ function PaisTab({ active, completed }) {
                 <Pie data={pieData} cx="50%" cy="50%" outerRadius={100} dataKey="value" label={({ name, value }) => `${name}: ${value}`}>
                   {pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                 </Pie>
-                <Tooltip />
+                <Tooltip {...tooltipStyle} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -511,10 +518,10 @@ function PaisTab({ active, completed }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={barData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: 'Poppins' }} />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="dias" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                <Tooltip {...tooltipStyle} />
+                <Bar dataKey="dias" fill={BRAND.navy} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -525,7 +532,7 @@ function PaisTab({ active, completed }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
+              <tr className="border-b border-slate-200" style={{ backgroundColor: '#F8FAFC' }}>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">País</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Activos</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Días Promedio</th>
@@ -540,7 +547,7 @@ function PaisTab({ active, completed }) {
                 active.filter(p => p.country === country).forEach(p => (p.channels || []).forEach(c => channels.add(c)))
                 return (
                   <tr key={country} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-800">{country}</td>
+                    <td className="px-4 py-3 font-medium" style={{ color: BRAND.navy }}>{country}</td>
                     <td className="px-4 py-3 text-slate-600">{count}</td>
                     <td className="px-4 py-3 text-slate-600">{avg} días</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{[...channels].slice(0, 4).join(', ')}</td>
@@ -558,25 +565,46 @@ function PaisTab({ active, completed }) {
 // ===== SHARED COMPONENTS =====
 function Card({ title, children }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-      {title && <h3 className="text-base font-semibold text-slate-800 mb-4">{title}</h3>}
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 card-hover">
+      {title && <h3 className="text-base font-semibold mb-4" style={{ color: BRAND.navy }}>{title}</h3>}
       {children}
     </div>
   )
 }
 
-function KpiCard({ icon, label, value, color }) {
-  const colorMap = {
-    blue: 'bg-blue-50 text-blue-600', green: 'bg-emerald-50 text-emerald-600',
-    amber: 'bg-amber-50 text-amber-600', red: 'bg-red-50 text-red-600',
-    purple: 'bg-purple-50 text-purple-600', cyan: 'bg-cyan-50 text-cyan-600',
-  }
+function KpiCard({ icon, label, value, brandColor }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 text-center">
-      <div className={`inline-flex p-2 rounded-xl mb-3 ${colorMap[color]}`}>{icon}</div>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 text-center card-hover">
+      <div className="inline-flex p-2 rounded-xl mb-3" style={{ backgroundColor: `${brandColor}15`, color: brandColor }}>
+        {icon}
+      </div>
       <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">{label}</div>
-      <div className="text-3xl font-bold text-slate-800">{value}</div>
+      <div className="text-3xl font-bold" style={{ color: BRAND.navy }}>{value}</div>
     </div>
+  )
+}
+
+function MetricBox({ label, value, unit, color }) {
+  return (
+    <div className="rounded-xl p-4 text-center" style={{ backgroundColor: `${color}12` }}>
+      <div className="text-xs font-semibold text-slate-500 uppercase mb-1">{label}</div>
+      <div className="text-3xl font-bold" style={{ color }}>{value}</div>
+      <div className="text-xs text-slate-500">{unit}</div>
+    </div>
+  )
+}
+
+function RiskBadge({ risk }) {
+  const config = {
+    red: { label: 'Alto', bg: `${BRAND.red}15`, color: BRAND.red },
+    yellow: { label: 'Medio', bg: `${BRAND.orange}15`, color: BRAND.orange },
+    green: { label: 'Bajo', bg: `${BRAND.green}15`, color: BRAND.green },
+  }
+  const c = config[risk] || config.green
+  return (
+    <span className="inline-block px-2.5 py-1 rounded-md text-xs font-semibold uppercase" style={{ backgroundColor: c.bg, color: c.color }}>
+      {c.label}
+    </span>
   )
 }
 
@@ -587,7 +615,8 @@ function FilterSelect({ label, value, onChange, options }) {
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:border-transparent"
+        style={{ '--tw-ring-color': BRAND.blue }}
       >
         <option value="">Todos</option>
         {options.map(opt => typeof opt === 'string'
@@ -601,14 +630,19 @@ function FilterSelect({ label, value, onChange, options }) {
 
 function Badge({ type }) {
   const map = {
-    Setup: 'bg-blue-100 text-blue-800', Upgrade: 'bg-pink-100 text-pink-800',
-    Reonboarding: 'bg-amber-100 text-amber-800', Starter: 'bg-indigo-100 text-indigo-800',
-    Pro: 'bg-purple-100 text-purple-800', Advanced: 'bg-slate-200 text-slate-700',
-    Enterprise: 'bg-orange-100 text-orange-800', Gold: 'bg-yellow-100 text-yellow-800',
-    Platinum: 'bg-slate-300 text-slate-800',
+    Setup: { bg: `${BRAND.blue}18`, color: BRAND.blue },
+    Upgrade: { bg: `${BRAND.pink}18`, color: BRAND.pink },
+    Reonboarding: { bg: `${BRAND.orange}18`, color: BRAND.orange },
+    Starter: { bg: `${BRAND.navy}12`, color: BRAND.navy },
+    Pro: { bg: `${BRAND.pink}12`, color: BRAND.pink },
+    Advanced: { bg: '#e2e8f0', color: '#475569' },
+    Enterprise: { bg: `${BRAND.orange}12`, color: BRAND.orange },
+    Gold: { bg: `${BRAND.yellow}18`, color: '#92400e' },
+    Platinum: { bg: '#cbd5e1', color: '#334155' },
   }
+  const style = map[type] || { bg: '#f1f5f9', color: '#64748b' }
   return (
-    <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-semibold ${map[type] || 'bg-slate-100 text-slate-600'}`}>
+    <span className="inline-block px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: style.bg, color: style.color }}>
       {type || '-'}
     </span>
   )
@@ -616,26 +650,26 @@ function Badge({ type }) {
 
 function StatusBadge({ statusKey, label }) {
   const map = {
-    on_track: { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', fallback: 'En Progreso' },
-    on_hold: { bg: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500', fallback: 'En Pausa' },
-    off_track: { bg: 'bg-red-100 text-red-700', dot: 'bg-red-500', fallback: 'Retrasado' },
-    at_risk: { bg: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500', fallback: 'En Riesgo' },
-    complete: { bg: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500', fallback: 'Completado' },
+    on_track: { color: BRAND.green, fallback: 'En Progreso' },
+    on_hold: { color: BRAND.yellow, fallback: 'En Pausa' },
+    off_track: { color: BRAND.red, fallback: 'Retrasado' },
+    at_risk: { color: BRAND.orange, fallback: 'En Riesgo' },
+    complete: { color: BRAND.blue, fallback: 'Completado' },
   }
   const s = map[statusKey] || map.on_track
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${s.bg}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: `${s.color}15`, color: s.color }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.color }} />
       {label || s.fallback}
     </span>
   )
 }
 
-function StatRow({ label, value, color = 'text-slate-800' }) {
+function StatRow({ label, value, color }) {
   return (
     <div className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
       <span className="text-sm text-slate-500">{label}</span>
-      <span className={`text-sm font-semibold ${color}`}>{value}</span>
+      <span className="text-sm font-semibold" style={color ? { color } : { color: BRAND.navy }}>{value}</span>
     </div>
   )
 }
