@@ -163,9 +163,8 @@ function computeSentimentStatus(sentiment) {
   if (sentiment === undefined || sentiment === null) return 'on_track';
   const val = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
   if (isNaN(val)) return 'on_track';
-  if (val <= 2) return 'off_track';   // Negative (1-2) → Con retraso (red)
-  if (val <= 3) return 'at_risk';     // Neutral (3) → En riesgo (yellow)
-  return 'on_track';                   // Positive (4-5) → En curso (green)
+  if (val <= 3) return 'at_risk';     // 1-3 → En riesgo (yellow)
+  return 'on_track';                   // 4-5 → En curso (green)
 }
 
 // Human-readable sentiment label with emoji
@@ -561,7 +560,29 @@ async function createStatusUpdate(projectGid, meetingData, token) {
   // DIIO sends duration in seconds — convert to minutes
   const rawDuration = meetingData.duration;
   const duration = rawDuration ? Math.round(rawDuration / 60) : null;
-  const sentiment = tv.sentiment?.value;
+  // Debug: log raw sentiment data to diagnose value mismatch
+  console.log('SENTIMENT DEBUG (meeting):', JSON.stringify({
+    rawSentiment: tv.sentiment,
+    sentimentValue: tv.sentiment?.value,
+    sentimentType: typeof tv.sentiment,
+    sentimentValueType: typeof tv.sentiment?.value,
+    allTrackerKeys: Object.keys(tv),
+    // Check alternative key names DIIO might use
+    sentimiento: tv.sentimiento,
+    sentimiento_del_cliente: tv.sentimiento_del_cliente,
+    'Sentimiento del cliente': tv['Sentimiento del cliente'],
+  }));
+
+  // Try multiple paths where DIIO might put the sentiment value
+  const sentiment = tv.sentiment?.value
+    ?? tv.sentiment  // maybe it's not nested
+    ?? tv.sentimiento?.value
+    ?? tv.sentimiento
+    ?? tv['Sentimiento del cliente']?.value
+    ?? tv['Sentimiento del cliente'];
+
+  console.log('SENTIMENT RESOLVED:', sentiment, typeof sentiment);
+
   const meetingDate = meetingData.scheduled_at
     ? new Date(meetingData.scheduled_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : new Date().toLocaleDateString('es-CL');
@@ -693,7 +714,8 @@ export default async function handler(req, res) {
 
   const body = req.body;
 
-  // Log every incoming webhook for debugging
+  // Log every incoming webhook for debugging — include raw sentiment for diagnosis
+  const _tv = body.tracker_values || {};
   console.log('DIIO webhook received:', JSON.stringify({
     action: body.action,
     id: body.id,
@@ -702,6 +724,8 @@ export default async function handler(req, res) {
     conversation_type: body.conversation_type || body.type,
     hasTrackerValues: !!body.tracker_values,
     trackerKeys: body.tracker_values ? Object.keys(body.tracker_values) : [],
+    rawSentiment: _tv.sentiment,
+    rawSentimiento: _tv.sentimiento || _tv['Sentimiento del cliente'],
     hasParticipants: !!body.participants,
     participantCount: Array.isArray(body.participants) ? body.participants.length : 0,
     keys: Object.keys(body),
