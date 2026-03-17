@@ -157,13 +157,30 @@ async function computeSmartStatus(projectGid, sentiment, token) {
 }
 
 // Simple sentiment → status mapping (used as one input to the composite)
+// DIIO scale: 1 (very negative) → 5 (very positive)
+// Asana statuses: off_track (red), at_risk (yellow), on_track (green)
 function computeSentimentStatus(sentiment) {
   if (sentiment === undefined || sentiment === null) return 'on_track';
   const val = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
   if (isNaN(val)) return 'on_track';
-  if (val <= 2) return 'at_risk';    // Bad sentiment → En riesgo (not Con retraso — only date can set that)
-  if (val <= 3) return 'at_risk';    // Neutral → En riesgo
-  return 'on_track';                  // Good sentiment → En curso
+  if (val <= 2) return 'off_track';   // Negative (1-2) → Con retraso (red)
+  if (val <= 3) return 'at_risk';     // Neutral (3) → En riesgo (yellow)
+  return 'on_track';                   // Positive (4-5) → En curso (green)
+}
+
+// Human-readable sentiment label with emoji
+function sentimentLabel(sentiment) {
+  if (sentiment === undefined || sentiment === null) return '';
+  const val = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
+  if (isNaN(val)) return '';
+  const labels = {
+    1: '😡 Muy negativo',
+    2: '😟 Negativo',
+    3: '😐 Neutral',
+    4: '😊 Positivo',
+    5: '🤩 Muy positivo',
+  };
+  return labels[val] || `Sentiment: ${val}`;
 }
 
 // ===== EXTRACT COMPANY NAME FROM CONVERSATION TITLE =====
@@ -398,6 +415,8 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   let text = `💬 Resumen conversación WhatsApp — ${today}`;
   if (convType) text += `\nTipo: ${convType}`;
   if (playbook) text += `\nPlaybook: ${playbook}`;
+  const sLabel = sentimentLabel(sentiment);
+  if (sLabel) text += `\n🎯 Sentimiento del cliente: ${sLabel} (${sentiment}/5)`;
   text += `\n\n${summary}`;
 
   if (pains) {
@@ -557,6 +576,8 @@ async function createStatusUpdate(projectGid, meetingData, token) {
   // Build status update text
   let text = `📋 Resumen reunión ${meetingDate}`;
   if (duration) text += ` (${duration} min)`;
+  const sLabel = sentimentLabel(sentiment);
+  if (sLabel) text += `\n🎯 Sentimiento del cliente: ${sLabel} (${sentiment}/5)`;
   text += `\n\n${summary}`;
 
   if (pains) {
