@@ -318,12 +318,55 @@ async function findAsanaProjectForConversation(conversationName, contactNames, u
     }
   }
 
-  // Strategy 1: DISABLED — contact name matching caused false positives
-  // Contact names are personal names (e.g. "Diego León Multivende"), not company names.
-  // Short project prefixes like "Go" match inside names like "Die*go*", causing all
-  // WhatsApp conversations to land on the wrong project.
-  // Keeping only Strategy 0 (conversation title) and Strategy 2 (implementer email).
-  console.log(`WhatsApp matching: skipping contact name strategy. Contacts: [${contactNames.join(', ')}]`);
+  // Strategy 1: Extract company name from contact names
+  // Convention: contacts are saved as "NombreEmpresa - NombrePersona"
+  // We extract the part before the dash and match it against Asana projects (same logic as meetings)
+  for (const contactName of contactNames) {
+    // Strip leading special chars (same cleanup as extractCompanyName)
+    const cleaned = contactName.replace(/^[\s\-–—·•.,;:]+/, '').trim();
+    if (!cleaned) continue;
+
+    // Extract company part: everything before the first dash
+    const dashMatch = cleaned.match(/^(.+?)\s*-\s*/);
+    const companyPart = dashMatch ? dashMatch[1].trim() : null;
+
+    if (!companyPart || companyPart.length < 3) {
+      console.log(`WhatsApp Strategy 1: skipping contact "${contactName}" — no company prefix found`);
+      continue;
+    }
+
+    console.log(`WhatsApp Strategy 1: extracted company "${companyPart}" from contact "${contactName}"`);
+
+    // Typeahead search in Asana
+    const searchResults = await asanaRequest(
+      `/workspaces/592491987465948/typeahead?resource_type=project&query=${encodeURIComponent(companyPart)}&count=10`,
+      token
+    );
+
+    if (searchResults?.data?.length > 0) {
+      for (const result of searchResults.data) {
+        const projectName = result.name.toLowerCase();
+        const searchName = companyPart.toLowerCase();
+
+        // Prefix match: project starts with company name or vice versa
+        if (projectName.startsWith(searchName)) {
+          const project = await isProjectInPortfolios(result.gid, token);
+          if (project) {
+            return { project, matchedBy: 'contact_company_typeahead', matchedValue: companyPart };
+          }
+        }
+
+        // Match against project prefix (part before dash in project name)
+        const projectPrefix = projectName.split(/\s*-\s*/)[0].trim();
+        if (projectPrefix.startsWith(searchName) || searchName.startsWith(projectPrefix)) {
+          const project = await isProjectInPortfolios(result.gid, token);
+          if (project) {
+            return { project, matchedBy: 'contact_company_typeahead', matchedValue: companyPart };
+          }
+        }
+      }
+    }
+  }
 
   // Strategy 2: Match by implementer email → project owner (unique match only)
   if (userEmails.length > 0) {
