@@ -761,12 +761,19 @@ export default async function handler(req, res) {
       const project = await findAsanaProject(companyName, sellerEmails, token);
 
       if (!project) {
+        const _tv = body.tracker_values || {};
         logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`);
         return res.status(200).json({
           status: 'warning',
           message: `No matching Asana project found for "${companyName}"`,
           meetingName,
           companyExtracted: companyName,
+          _debug_sentiment: {
+            raw_sentiment_field: _tv.sentiment,
+            raw_sentiment_type: typeof _tv.sentiment,
+            resolved_value: _tv.sentiment?.value ?? _tv.sentiment ?? null,
+            all_tracker_keys: Object.keys(_tv),
+          },
         });
       }
 
