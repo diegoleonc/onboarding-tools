@@ -142,15 +142,15 @@ async function computeSmartStatus(projectGid, sentiment, token) {
     finalStatus = STATUS_SEVERITY[sentimentStatus] > STATUS_SEVERITY['at_risk']
       ? sentimentStatus
       : 'at_risk';
-    reason = `Cerca del deadline (${daysRemaining} días), sentiment: ${sentiment ?? 'N/A'}`;
+    reason = `Cerca del deadline (${daysRemaining} días)`;
   } else if (dateStatus === 'on_track') {
     // Rule 4: On time → sentiment decides
     finalStatus = sentimentStatus;
-    reason = `A tiempo (${daysRemaining} días restantes), sentiment: ${sentiment ?? 'N/A'}`;
+    reason = `A tiempo (${daysRemaining} días restantes)`;
   } else {
     // Rule 5: No due date → sentiment only
     finalStatus = sentimentStatus;
-    reason = `Sin fecha límite, sentiment: ${sentiment ?? 'N/A'}`;
+    reason = `Sin fecha límite`;
   }
 
   return {
@@ -448,7 +448,6 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   }
 
   text += `\n\n🔗 Match: ${matchInfo.matchedBy} (${matchInfo.matchedValue})`;
-  text += `\n📊 Estado: ${statusResult.reason}`;
   text += `\n— Actualización automática vía DIIO (WhatsApp)`;
 
   // Title: use company name if available, otherwise generic
@@ -666,7 +665,6 @@ async function createStatusUpdate(projectGid, meetingData, token) {
     text += `\n\n👥 Participantes: ${[sellers, customers].filter(Boolean).join(' | ')}`;
   }
 
-  text += `\n\n📊 Estado: ${statusResult.reason}`;
   text += `\n— Actualización automática vía DIIO`;
 
   // Create the status update via Asana API
