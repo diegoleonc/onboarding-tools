@@ -1,6 +1,7 @@
 // Vercel Serverless Function: Receive DIIO webhook and update Asana project status
 // Handles both meeting.finished and written_conversation.finished events
 import crypto from 'crypto';
+import { Redis } from '@upstash/redis';
 
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
 
@@ -709,15 +710,47 @@ async function asanaRequest(path, token, method = 'GET', body = null) {
 }
 
 // ===== LOG WEBHOOK EVENT =====
-function logEvent(action, meetingName, projectName, success, details = '') {
-  console.log(JSON.stringify({
+// ===== REDIS WEBHOOK LOG =====
+let _redis = null;
+function getRedis() {
+  if (!_redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    _redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+  }
+  return _redis;
+}
+
+async function logEvent(action, meetingName, projectName, success, details = '', extra = {}) {
+  const entry = {
+    id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
-    action,
-    meetingName,
-    projectMatch: projectName || 'NO MATCH',
+    action: action || 'unknown',
+    type: (action === 'meeting.finished') ? 'meeting' : 'whatsapp',
+    name: meetingName || '',
+    projectMatch: projectName || null,
     success,
     details,
-  }));
+    ...extra,
+  };
+
+  // Always console.log
+  console.log(JSON.stringify(entry));
+
+  // Store in Redis (non-blocking — don't let Redis failures break the webhook)
+  try {
+    const redis = getRedis();
+    if (redis) {
+      // Store as sorted set (score = timestamp for ordering)
+      const score = Date.now();
+      await redis.zadd('webhook:logs', { score, member: JSON.stringify(entry) });
+      // Keep only last 500 entries to stay within free tier
+      await redis.zremrangebyrank('webhook:logs', 0, -501);
+    }
+  } catch (err) {
+    console.error('Redis log error (non-fatal):', err.message);
+  }
 }
 
 // ===== MAIN HANDLER =====
@@ -787,13 +820,23 @@ export default async function handler(req, res) {
       const companyName = extractCompanyName(meetingName);
       const sellerEmails = body.attendees?.sellers?.map(s => s.email) || [];
 
-      logEvent(action, meetingName, null, true, `Extracted company: "${companyName}"`);
+      const tv = body.tracker_values || {};
+      const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
+
+      logEvent(action, meetingName, null, true, `Extracted company: "${companyName}"`, {
+        sentiment,
+        sellerEmails,
+        companyExtracted: companyName,
+      });
 
       const project = await findAsanaProject(companyName, sellerEmails, token);
 
       if (!project) {
         const _tv = body.tracker_values || {};
-        logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`);
+        logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`, {
+          sentiment,
+          companyExtracted: companyName,
+        });
         return res.status(200).json({
           status: 'warning',
           message: `No matching Asana project found for "${companyName}"`,
@@ -811,7 +854,7 @@ export default async function handler(req, res) {
       const statusUpdate = await createStatusUpdate(project.gid, body, token);
 
       if (statusUpdate) {
-        logEvent(action, meetingName, project.name, true, 'Status update created');
+        logEvent(action, meetingName, project.name, true, 'Status update created', { sentiment });
         // Include raw sentiment debug info in response
         const _tv = body.tracker_values || {};
         return res.status(200).json({
@@ -842,8 +885,12 @@ export default async function handler(req, res) {
       const convId = body.id || 'unknown';
       const convName = body.name || '';
 
+      const convTv = body.tracker_values || {};
+      const convSentiment = convTv.sentiment?.value ?? convTv.sentiment ?? null;
+
       logEvent(action || 'conversation', convName || convId, null, true,
-        `Name: "${convName}" | Contacts: [${convInfo.contactNames.join(', ')}] | Users: [${convInfo.userEmails.join(', ')}]`
+        `Name: "${convName}" | Contacts: [${convInfo.contactNames.join(', ')}] | Users: [${convInfo.userEmails.join(', ')}]`,
+        { sentiment: convSentiment, contactNames: convInfo.contactNames, userEmails: convInfo.userEmails, integrationType: body.integration_type }
       );
 
       const matchResult = await findAsanaProjectForConversation(
@@ -868,8 +915,9 @@ export default async function handler(req, res) {
       );
 
       if (statusUpdate) {
-        logEvent(action, convId, matchResult.project.name, true,
-          `Status update created (matched by ${matchResult.matchedBy}: ${matchResult.matchedValue})`
+        logEvent(action || 'conversation', convId, matchResult.project.name, true,
+          `Status update created (matched by ${matchResult.matchedBy}: ${matchResult.matchedValue})`,
+          { sentiment: convSentiment, matchedBy: matchResult.matchedBy, contactNames: convInfo.contactNames }
         );
         return res.status(200).json({
           status: 'success',
