@@ -822,9 +822,14 @@ export default async function handler(req, res) {
 
       const tv = body.tracker_values || {};
       const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
+      // Capture raw sentiment exactly as DIIO sends it (for mismatch debugging)
+      const rawSentimentPayload = tv.sentiment;
 
       logEvent(action, meetingName, null, true, `Extracted company: "${companyName}"`, {
         sentiment,
+        rawSentiment: rawSentimentPayload,
+        rawSentimentType: typeof rawSentimentPayload,
+        meetingId: body.id,
         sellerEmails,
         companyExtracted: companyName,
       });
@@ -854,7 +859,11 @@ export default async function handler(req, res) {
       const statusUpdate = await createStatusUpdate(project.gid, body, token);
 
       if (statusUpdate) {
-        logEvent(action, meetingName, project.name, true, 'Status update created', { sentiment });
+        logEvent(action, meetingName, project.name, true, 'Status update created', {
+          sentiment,
+          rawSentiment: rawSentimentPayload,
+          meetingId: body.id,
+        });
         // Include raw sentiment debug info in response
         const _tv = body.tracker_values || {};
         return res.status(200).json({
