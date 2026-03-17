@@ -1,7 +1,6 @@
 // Vercel Serverless Function: Receive DIIO webhook and update Asana project status
 // Handles both meeting.finished and written_conversation.finished events
 import crypto from 'crypto';
-import { storePayload } from './debug.js';
 
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
 
@@ -715,9 +714,6 @@ export default async function handler(req, res) {
 
   const body = req.body;
 
-  // Store raw payload for debug inspection via /api/webhook/debug
-  storePayload(body);
-
   // Log every incoming webhook for debugging — include raw sentiment for diagnosis
   const _tv = body.tracker_values || {};
   console.log('DIIO webhook received:', JSON.stringify({
@@ -778,11 +774,19 @@ export default async function handler(req, res) {
 
       if (statusUpdate) {
         logEvent(action, meetingName, project.name, true, 'Status update created');
+        // Include raw sentiment debug info in response
+        const _tv = body.tracker_values || {};
         return res.status(200).json({
           status: 'success',
           message: `Status update created on "${project.name}"`,
           projectGid: project.gid,
           statusUpdateGid: statusUpdate.data?.gid,
+          _debug_sentiment: {
+            raw_sentiment_field: _tv.sentiment,
+            raw_sentiment_type: typeof _tv.sentiment,
+            resolved_value: _tv.sentiment?.value ?? _tv.sentiment ?? null,
+            all_tracker_keys: Object.keys(_tv),
+          },
         });
       } else {
         logEvent(action, meetingName, project.name, false, 'Failed to create status update');
