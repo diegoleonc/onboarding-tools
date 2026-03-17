@@ -81,14 +81,14 @@ function extractCompanyName(meetingName) {
 }
 
 // ===== SMART STATUS COMPUTATION (Option 4) =====
-// Combines: project due date + DIIO sentiment + current Asana status
+// Combines: project due date + DIIO success_odds + current Asana status
 // Rules:
 //   1. If current status is "En espera" or "Finalizado" → don't touch it
-//   2. If project is past due → always "Con retraso" (date wins over sentiment)
+//   2. If project is past due → always "Con retraso" (date wins over success_odds)
 //   3. If project is near deadline (≤5 days) → minimum "En riesgo"
-//   4. If project is on time → sentiment decides: bad→En riesgo, good→En curso
-//   5. If no due date → sentiment only decides between En curso / En riesgo
-async function computeSmartStatus(projectGid, sentiment, token) {
+//   4. If project is on time → success_odds decides: low→Con retraso, mid→En riesgo, high→En curso
+//   5. If no due date → success_odds only
+async function computeSmartStatus(projectGid, successOdds, token) {
   // Fetch project details: due date, current status, task completion
   const projectData = await asanaRequest(
     `/projects/${projectGid}?opt_fields=due_on,current_status_update,current_status_update.status_type,custom_fields,custom_fields.name,custom_fields.display_value`,
@@ -97,12 +97,12 @@ async function computeSmartStatus(projectGid, sentiment, token) {
 
   const project = projectData?.data;
   if (!project) {
-    // Fallback: just use sentiment
-    const fallbackStatus = computeSentimentStatus(sentiment);
+    // Fallback: just use success_odds
+    const fallbackStatus = computeSuccessStatus(successOdds);
     return {
       statusType: fallbackStatus,
       skipped: false,
-      reason: `Sin datos del proyecto, sentiment: ${sentiment ?? 'N/A'}`,
+      reason: `Sin datos del proyecto, success_odds: ${successOdds ?? 'N/A'}`,
     };
   }
 
@@ -139,8 +139,8 @@ async function computeSmartStatus(projectGid, sentiment, token) {
     }
   }
 
-  // Calculate sentiment-based status
-  const sentimentStatus = computeSentimentStatus(sentiment);
+  // Calculate success_odds-based status
+  const sentimentStatus = computeSuccessStatus(successOdds);
 
   // Combine: take the WORST between date and sentiment
   let finalStatus;
@@ -177,30 +177,44 @@ async function computeSmartStatus(projectGid, sentiment, token) {
   };
 }
 
-// Simple sentiment → status mapping (used as one input to the composite)
-// DIIO scale: 1 (very negative) → 5 (very positive)
+// Success odds → Asana status mapping
+// DIIO success_odds scale: 1 (very low) → 5 (very high)
 // Asana statuses: off_track (red), at_risk (yellow), on_track (green)
-function computeSentimentStatus(sentiment) {
-  if (sentiment === undefined || sentiment === null) return 'on_track';
-  const val = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
+function computeSuccessStatus(successOdds) {
+  if (successOdds === undefined || successOdds === null) return 'on_track';
+  const val = typeof successOdds === 'string' ? parseFloat(successOdds) : successOdds;
   if (isNaN(val)) return 'on_track';
-  if (val <= 3) return 'at_risk';     // 1-3 → En riesgo (yellow)
-  return 'on_track';                   // 4-5 → En curso (green)
+  if (val <= 2) return 'off_track';    // 1-2 → Con retraso (red)
+  if (val <= 3) return 'at_risk';      // 3   → En riesgo (yellow)
+  return 'on_track';                    // 4-5 → En curso (green)
 }
 
-// Human-readable sentiment label with emoji
+// Human-readable sentiment label with emoji (scale 1-3: client feeling)
 function sentimentLabel(sentiment) {
   if (sentiment === undefined || sentiment === null) return '';
   const val = typeof sentiment === 'string' ? parseFloat(sentiment) : sentiment;
   if (isNaN(val)) return '';
   const labels = {
-    1: '😡 Muy negativo',
-    2: '😟 Negativo',
-    3: '😐 Neutral',
-    4: '😊 Positivo',
-    5: '🤩 Muy positivo',
+    1: '😟 Negativo',
+    2: '😐 Neutral',
+    3: '😊 Positivo',
   };
   return labels[val] || `Sentiment: ${val}`;
+}
+
+// Human-readable success odds label with emoji (scale 1-5: predicted success)
+function successOddsLabel(odds) {
+  if (odds === undefined || odds === null) return '';
+  const val = typeof odds === 'string' ? parseFloat(odds) : odds;
+  if (isNaN(val)) return '';
+  const labels = {
+    1: '🔴 Muy baja',
+    2: '🟠 Baja',
+    3: '🟡 Media',
+    4: '🟢 Alta',
+    5: '🟢 Muy alta',
+  };
+  return labels[val] || `Predicción: ${val}`;
 }
 
 // ===== EXTRACT COMPANY NAME FROM CONVERSATION TITLE =====
@@ -407,14 +421,14 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   const pains = stripMarkdown(tv.customer_pains?.value);
   const objections = stripMarkdown(tv.objections?.value);
   const unresolvedQueries = stripMarkdown(tv.unresolve_queries?.value);
-  const sentiment = tv.sentiment?.value;
+  const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
+  const successOdds = tv.success_odds?.value ?? tv.success_odds ?? null;
   const playbook = body.playbook?.name || '';
   const convType = body.conversation_type || body.type || '';
 
-  // Compute smart status
-  const statusResult = await computeSmartStatus(projectGid, sentiment, token);
+  // Compute smart status using success_odds (NOT sentiment)
+  const statusResult = await computeSmartStatus(projectGid, successOdds, token);
 
-  // If status is manually managed, still create the update but preserve the status
   if (statusResult.skipped) {
     console.log(`Skipping status change for project ${projectGid}: ${statusResult.reason}`);
   }
@@ -428,8 +442,10 @@ async function createConversationStatusUpdate(projectGid, body, matchInfo, token
   let text = `💬 Resumen conversación WhatsApp — ${today}`;
   if (convType) text += `\nTipo: ${convType}`;
   if (playbook) text += `\nPlaybook: ${playbook}`;
+  const soLabel = successOddsLabel(successOdds);
+  if (soLabel) text += `\n🎯 Predicción de éxito: ${soLabel} (${successOdds}/5)`;
   const sLabel = sentimentLabel(sentiment);
-  if (sLabel) text += `\n🎯 Sentimiento del cliente: ${sLabel} (${sentiment}/5)`;
+  if (sLabel) text += `\n💬 Sentimiento del cliente: ${sLabel} (${sentiment}/3)`;
   text += `\n\n${summary}`;
 
   if (pains) {
@@ -591,35 +607,25 @@ async function createStatusUpdate(projectGid, meetingData, token) {
   // DIIO sends duration in seconds — convert to minutes
   const rawDuration = meetingData.duration;
   const duration = rawDuration ? Math.round(rawDuration / 60) : null;
-  // Debug: log raw sentiment data to diagnose value mismatch
-  console.log('SENTIMENT DEBUG (meeting):', JSON.stringify({
-    rawSentiment: tv.sentiment,
-    sentimentValue: tv.sentiment?.value,
-    sentimentType: typeof tv.sentiment,
-    sentimentValueType: typeof tv.sentiment?.value,
+  // Extract both fields:
+  // - sentiment: client feeling (1-3 scale) — informational only
+  // - success_odds: predicted success (1-5 scale) — drives Asana status
+  const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
+  const successOdds = tv.success_odds?.value ?? tv.success_odds ?? null;
+
+  console.log('TRACKER VALUES DEBUG (meeting):', JSON.stringify({
+    sentiment, successOdds,
     allTrackerKeys: Object.keys(tv),
-    // Check alternative key names DIIO might use
-    sentimiento: tv.sentimiento,
-    sentimiento_del_cliente: tv.sentimiento_del_cliente,
-    'Sentimiento del cliente': tv['Sentimiento del cliente'],
+    rawSentiment: tv.sentiment,
+    rawSuccessOdds: tv.success_odds,
   }));
-
-  // Try multiple paths where DIIO might put the sentiment value
-  const sentiment = tv.sentiment?.value
-    ?? tv.sentiment  // maybe it's not nested
-    ?? tv.sentimiento?.value
-    ?? tv.sentimiento
-    ?? tv['Sentimiento del cliente']?.value
-    ?? tv['Sentimiento del cliente'];
-
-  console.log('SENTIMENT RESOLVED:', sentiment, typeof sentiment);
 
   const meetingDate = meetingData.scheduled_at
     ? new Date(meetingData.scheduled_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : new Date().toLocaleDateString('es-CL');
 
-  // Compute smart status
-  const statusResult = await computeSmartStatus(projectGid, sentiment, token);
+  // Compute smart status using success_odds (NOT sentiment)
+  const statusResult = await computeSmartStatus(projectGid, successOdds, token);
 
   if (statusResult.skipped) {
     console.log(`Skipping status change for project ${projectGid}: ${statusResult.reason}`);
@@ -630,8 +636,10 @@ async function createStatusUpdate(projectGid, meetingData, token) {
   let text = `📋 Resumen reunión ${meetingDate}`;
   if (duration) text += ` (${duration} min)`;
   if (meetingName) text += `\n📎 Reunión DIIO: ${meetingName}`;
+  const soLabel = successOddsLabel(successOdds);
+  if (soLabel) text += `\n🎯 Predicción de éxito: ${soLabel} (${successOdds}/5)`;
   const sLabel = sentimentLabel(sentiment);
-  if (sLabel) text += `\n🎯 Sentimiento del cliente: ${sLabel} (${sentiment}/5)`;
+  if (sLabel) text += `\n💬 Sentimiento del cliente: ${sLabel} (${sentiment}/3)`;
   text += `\n\n${summary}`;
 
   if (pains) {
@@ -778,7 +786,7 @@ export default async function handler(req, res) {
 
   const body = req.body;
 
-  // Log every incoming webhook for debugging — include raw sentiment for diagnosis
+  // Log every incoming webhook for debugging
   const _tv = body.tracker_values || {};
   console.log('DIIO webhook received:', JSON.stringify({
     action: body.action,
@@ -789,7 +797,7 @@ export default async function handler(req, res) {
     hasTrackerValues: !!body.tracker_values,
     trackerKeys: body.tracker_values ? Object.keys(body.tracker_values) : [],
     rawSentiment: _tv.sentiment,
-    rawSentimiento: _tv.sentimiento || _tv['Sentimiento del cliente'],
+    rawSuccessOdds: _tv.success_odds,
     hasParticipants: !!body.participants,
     participantCount: Array.isArray(body.participants) ? body.participants.length : 0,
     keys: Object.keys(body),
@@ -822,13 +830,12 @@ export default async function handler(req, res) {
 
       const tv = body.tracker_values || {};
       const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
-      // Capture raw sentiment exactly as DIIO sends it (for mismatch debugging)
-      const rawSentimentPayload = tv.sentiment;
+      const successOdds = tv.success_odds?.value ?? tv.success_odds ?? null;
 
       logEvent(action, meetingName, null, true, `Extracted company: "${companyName}"`, {
         sentiment,
-        rawSentiment: rawSentimentPayload,
-        rawSentimentType: typeof rawSentimentPayload,
+        successOdds,
+        rawSuccessOdds: tv.success_odds,
         meetingId: body.id,
         sellerEmails,
         companyExtracted: companyName,
@@ -837,9 +844,9 @@ export default async function handler(req, res) {
       const project = await findAsanaProject(companyName, sellerEmails, token);
 
       if (!project) {
-        const _tv = body.tracker_values || {};
         logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`, {
           sentiment,
+          successOdds,
           companyExtracted: companyName,
         });
         return res.status(200).json({
@@ -847,12 +854,7 @@ export default async function handler(req, res) {
           message: `No matching Asana project found for "${companyName}"`,
           meetingName,
           companyExtracted: companyName,
-          _debug_sentiment: {
-            raw_sentiment_field: _tv.sentiment,
-            raw_sentiment_type: typeof _tv.sentiment,
-            resolved_value: _tv.sentiment?.value ?? _tv.sentiment ?? null,
-            all_tracker_keys: Object.keys(_tv),
-          },
+          _debug: { sentiment, successOdds, trackerKeys: Object.keys(tv) },
         });
       }
 
@@ -861,22 +863,15 @@ export default async function handler(req, res) {
       if (statusUpdate) {
         logEvent(action, meetingName, project.name, true, 'Status update created', {
           sentiment,
-          rawSentiment: rawSentimentPayload,
+          successOdds,
           meetingId: body.id,
         });
-        // Include raw sentiment debug info in response
-        const _tv = body.tracker_values || {};
         return res.status(200).json({
           status: 'success',
           message: `Status update created on "${project.name}"`,
           projectGid: project.gid,
           statusUpdateGid: statusUpdate.data?.gid,
-          _debug_sentiment: {
-            raw_sentiment_field: _tv.sentiment,
-            raw_sentiment_type: typeof _tv.sentiment,
-            resolved_value: _tv.sentiment?.value ?? _tv.sentiment ?? null,
-            all_tracker_keys: Object.keys(_tv),
-          },
+          _debug: { sentiment, successOdds, trackerKeys: Object.keys(tv) },
         });
       } else {
         logEvent(action, meetingName, project.name, false, 'Failed to create status update');
@@ -896,10 +891,11 @@ export default async function handler(req, res) {
 
       const convTv = body.tracker_values || {};
       const convSentiment = convTv.sentiment?.value ?? convTv.sentiment ?? null;
+      const convSuccessOdds = convTv.success_odds?.value ?? convTv.success_odds ?? null;
 
       logEvent(action || 'conversation', convName || convId, null, true,
         `Name: "${convName}" | Contacts: [${convInfo.contactNames.join(', ')}] | Users: [${convInfo.userEmails.join(', ')}]`,
-        { sentiment: convSentiment, contactNames: convInfo.contactNames, userEmails: convInfo.userEmails, integrationType: body.integration_type }
+        { sentiment: convSentiment, successOdds: convSuccessOdds, contactNames: convInfo.contactNames, userEmails: convInfo.userEmails, integrationType: body.integration_type }
       );
 
       const matchResult = await findAsanaProjectForConversation(
@@ -926,7 +922,7 @@ export default async function handler(req, res) {
       if (statusUpdate) {
         logEvent(action || 'conversation', convId, matchResult.project.name, true,
           `Status update created (matched by ${matchResult.matchedBy}: ${matchResult.matchedValue})`,
-          { sentiment: convSentiment, matchedBy: matchResult.matchedBy, contactNames: convInfo.contactNames }
+          { sentiment: convSentiment, successOdds: convSuccessOdds, matchedBy: matchResult.matchedBy, contactNames: convInfo.contactNames }
         );
         return res.status(200).json({
           status: 'success',
