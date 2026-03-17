@@ -1,6 +1,7 @@
 // Vercel Serverless Function: Receive DIIO webhook and update Asana project status
 // Handles both meeting.finished and written_conversation.finished events
 import crypto from 'crypto';
+import { storePayload } from './debug.js';
 
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
 
@@ -713,6 +714,9 @@ export default async function handler(req, res) {
   }
 
   const body = req.body;
+
+  // Store raw payload for debug inspection via /api/webhook/debug
+  storePayload(body);
 
   // Log every incoming webhook for debugging — include raw sentiment for diagnosis
   const _tv = body.tracker_values || {};
