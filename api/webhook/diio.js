@@ -318,62 +318,12 @@ async function findAsanaProjectForConversation(conversationName, contactNames, u
     }
   }
 
-  // Strategy 1: Search by contact names
-  for (const contactName of contactNames) {
-    // Clean the contact name - remove common prefixes/suffixes
-    const cleanName = contactName
-      .replace(/^\+?\d[\d\s-]+/, '') // Remove phone number prefixes
-      .replace(/\s*\(.*?\)\s*/g, '') // Remove parenthetical info
-      .trim();
-
-    if (cleanName.length < 2) continue;
-
-    // Try typeahead search
-    const searchResults = await asanaRequest(
-      `/workspaces/592491987465948/typeahead?resource_type=project&query=${encodeURIComponent(cleanName)}&count=10`,
-      token
-    );
-
-    if (searchResults?.data?.length > 0) {
-      for (const result of searchResults.data) {
-        const projectName = result.name.toLowerCase();
-        const searchName = cleanName.toLowerCase();
-
-        if (projectName.includes(searchName)) {
-          const project = await isProjectInPortfolios(result.gid, token);
-          if (project) {
-            return { project, matchedBy: 'contact_name_typeahead', matchedValue: cleanName };
-          }
-        }
-      }
-    }
-
-    // Try portfolio scan
-    for (const portfolioGid of PORTFOLIOS) {
-      const items = await asanaRequest(
-        `/portfolios/${portfolioGid}/items?opt_fields=name,completed&limit=100`,
-        token
-      );
-
-      if (items?.data) {
-        for (const project of items.data) {
-          if (project.completed) continue;
-          const projectNameLower = project.name.toLowerCase();
-          const searchNameLower = cleanName.toLowerCase();
-
-          if (projectNameLower.includes(searchNameLower) || searchNameLower.includes(projectNameLower.split(' ')[0])) {
-            return { project, matchedBy: 'contact_name_portfolio', matchedValue: cleanName };
-          }
-
-          // Fuzzy: all words match
-          const words = searchNameLower.split(/\s+/).filter(w => w.length > 2);
-          if (words.length > 1 && words.every(w => projectNameLower.includes(w))) {
-            return { project, matchedBy: 'contact_name_fuzzy', matchedValue: cleanName };
-          }
-        }
-      }
-    }
-  }
+  // Strategy 1: DISABLED — contact name matching caused false positives
+  // Contact names are personal names (e.g. "Diego León Multivende"), not company names.
+  // Short project prefixes like "Go" match inside names like "Die*go*", causing all
+  // WhatsApp conversations to land on the wrong project.
+  // Keeping only Strategy 0 (conversation title) and Strategy 2 (implementer email).
+  console.log(`WhatsApp matching: skipping contact name strategy. Contacts: [${contactNames.join(', ')}]`);
 
   // Strategy 2: Match by implementer email → project owner (unique match only)
   if (userEmails.length > 0) {
