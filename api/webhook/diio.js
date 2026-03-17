@@ -184,9 +184,8 @@ function computeSuccessStatus(successOdds) {
   if (successOdds === undefined || successOdds === null) return 'on_track';
   const val = typeof successOdds === 'string' ? parseFloat(successOdds) : successOdds;
   if (isNaN(val)) return 'on_track';
-  if (val <= 2) return 'off_track';    // 1-2 → Con retraso (red)
-  if (val <= 3) return 'at_risk';      // 3   → En riesgo (yellow)
-  return 'on_track';                    // 4-5 → En curso (green)
+  if (val <= 2) return 'at_risk';      // 1-2 → En riesgo (yellow)
+  return 'on_track';                    // 3-5 → En curso (green)
 }
 
 // Human-readable sentiment label with emoji (scale 1-3: client feeling)
