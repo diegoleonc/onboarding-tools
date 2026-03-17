@@ -42,6 +42,18 @@ function validateSignature(req, body) {
   return computed === signature;
 }
 
+// ===== STRIP MARKDOWN FOR ASANA (plain text only) =====
+function stripMarkdown(text) {
+  if (!text) return text;
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')   // **bold** → bold
+    .replace(/\*(.+?)\*/g, '$1')        // *italic* → italic
+    .replace(/__(.*?)__/g, '$1')         // __underline__ → underline
+    .replace(/~~(.*?)~~/g, '$1')         // ~~strike~~ → strike
+    .replace(/^#{1,6}\s+/gm, '')         // # headers → plain text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // [link](url) → link
+}
+
 // ===== EXTRACT COMPANY NAME FROM MEETING NAME =====
 function extractCompanyName(meetingName) {
   // Clean up: strip leading dashes, dots, spaces, special chars
@@ -397,10 +409,10 @@ async function findAsanaProjectForConversation(conversationName, contactNames, u
 // ===== CREATE ASANA STATUS UPDATE FOR CONVERSATION =====
 async function createConversationStatusUpdate(projectGid, body, matchInfo, token) {
   const tv = body.tracker_values || {};
-  const summary = tv.summary?.value || 'Sin resumen disponible';
-  const pains = tv.customer_pains?.value;
-  const objections = tv.objections?.value;
-  const unresolvedQueries = tv.unresolve_queries?.value;
+  const summary = stripMarkdown(tv.summary?.value) || 'Sin resumen disponible';
+  const pains = stripMarkdown(tv.customer_pains?.value);
+  const objections = stripMarkdown(tv.objections?.value);
+  const unresolvedQueries = stripMarkdown(tv.unresolve_queries?.value);
   const sentiment = tv.sentiment?.value;
   const playbook = body.playbook?.name || '';
   const convType = body.conversation_type || body.type || '';
@@ -577,10 +589,10 @@ async function findAsanaProject(companyName, sellerEmails, token) {
 // ===== CREATE ASANA STATUS UPDATE =====
 async function createStatusUpdate(projectGid, meetingData, token) {
   const tv = meetingData.tracker_values || {};
-  const summary = tv.summary?.value || 'Sin resumen disponible';
-  const pains = tv.customer_pains?.value;
-  const objections = tv.objections?.value;
-  const unresolvedQueries = tv.unresolve_queries?.value;
+  const summary = stripMarkdown(tv.summary?.value) || 'Sin resumen disponible';
+  const pains = stripMarkdown(tv.customer_pains?.value);
+  const objections = stripMarkdown(tv.objections?.value);
+  const unresolvedQueries = stripMarkdown(tv.unresolve_queries?.value);
   const commitments = meetingData.commitments;
   // DIIO sends duration in seconds — convert to minutes
   const rawDuration = meetingData.duration;
