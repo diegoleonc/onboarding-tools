@@ -487,40 +487,58 @@ async function findAsanaProject(companyName, sellerEmails, token) {
     token
   );
 
-  if (searchResults?.data?.length > 0) {
+  // Minimum company name length to avoid false positives (e.g. "Bu" matching "Bubba")
+  const MIN_COMPANY_NAME_LENGTH = 3;
+
+  if (companyName.length >= MIN_COMPANY_NAME_LENGTH && searchResults?.data?.length > 0) {
     for (const result of searchResults.data) {
       const projectName = result.name.toLowerCase();
       const searchName = companyName.toLowerCase();
 
-      if (projectName.includes(searchName)) {
+      // Only match if search name appears at the START of the project name
+      // This prevents "Abuhadba" from matching "Bubba Uruguay - ..."
+      if (projectName.startsWith(searchName)) {
+        const project = await isProjectInPortfolios(result.gid, token);
+        if (project) return project;
+      }
+
+      // Also match if the project name part before the dash starts with search name
+      const projectPrefix = projectName.split(/\s*-\s*/)[0].trim();
+      if (projectPrefix.startsWith(searchName) || searchName.startsWith(projectPrefix)) {
         const project = await isProjectInPortfolios(result.gid, token);
         if (project) return project;
       }
     }
   }
 
-  // Strategy 2: Search through portfolios for fuzzy match
-  for (const portfolioGid of PORTFOLIOS) {
-    const items = await asanaRequest(
-      `/portfolios/${portfolioGid}/items?opt_fields=name,completed&limit=100`,
-      token
-    );
+  // Strategy 2: Search through portfolios for prefix match
+  if (companyName.length >= MIN_COMPANY_NAME_LENGTH) {
+    for (const portfolioGid of PORTFOLIOS) {
+      const items = await asanaRequest(
+        `/portfolios/${portfolioGid}/items?opt_fields=name,completed&limit=100`,
+        token
+      );
 
-    if (items?.data) {
-      for (const project of items.data) {
-        if (project.completed) continue;
-        const projectNameLower = project.name.toLowerCase();
-        const searchNameLower = companyName.toLowerCase();
+      if (items?.data) {
+        for (const project of items.data) {
+          if (project.completed) continue;
+          const projectNameLower = project.name.toLowerCase();
+          const searchNameLower = companyName.toLowerCase();
 
-        // Exact company name match at the start
-        if (projectNameLower.startsWith(searchNameLower)) {
-          return project;
-        }
+          // Extract project company name (part before first dash)
+          const projectCompany = projectNameLower.split(/\s*-\s*/)[0].trim();
 
-        // Fuzzy: check if all words of the company name appear in the project name
-        const words = searchNameLower.split(/\s+/);
-        if (words.length > 1 && words.every(w => projectNameLower.includes(w))) {
-          return project;
+          // Exact company name match at the start
+          if (projectCompany.startsWith(searchNameLower) || searchNameLower.startsWith(projectCompany)) {
+            return project;
+          }
+
+          // Fuzzy: all words must appear, but ONLY match against the company part (before dash)
+          // AND require minimum 2 words with each word at least 3 chars
+          const words = searchNameLower.split(/\s+/).filter(w => w.length >= 3);
+          if (words.length >= 2 && words.every(w => projectCompany.includes(w))) {
+            return project;
+          }
         }
       }
     }
@@ -595,8 +613,10 @@ async function createStatusUpdate(projectGid, meetingData, token) {
   }
 
   // Build status update text
+  const meetingName = meetingData.name || '';
   let text = `📋 Resumen reunión ${meetingDate}`;
   if (duration) text += ` (${duration} min)`;
+  if (meetingName) text += `\n📎 Reunión DIIO: ${meetingName}`;
   const sLabel = sentimentLabel(sentiment);
   if (sLabel) text += `\n🎯 Sentimiento del cliente: ${sLabel} (${sentiment}/5)`;
   text += `\n\n${summary}`;
