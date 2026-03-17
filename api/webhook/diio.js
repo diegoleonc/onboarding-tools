@@ -572,25 +572,11 @@ async function findAsanaProject(companyName, sellerEmails, token) {
     }
   }
 
-  // Strategy 3: If seller emails are available, find projects where they are owner
-  if (sellerEmails?.length > 0) {
-    for (const portfolioGid of PORTFOLIOS) {
-      const items = await asanaRequest(
-        `/portfolios/${portfolioGid}/items?opt_fields=name,completed,owner,owner.email&limit=100`,
-        token
-      );
-
-      if (items?.data) {
-        // This is a weaker match - log it but still return if found
-        const ownerProjects = items.data.filter(
-          p => !p.completed && sellerEmails.includes(p.owner?.email)
-        );
-        if (ownerProjects.length === 1) {
-          return ownerProjects[0]; // Only return if unique match
-        }
-      }
-    }
-  }
+  // Strategy 3 (seller email match) REMOVED — caused false positives.
+  // When the implementer had only 1 project, ANY meeting would match it
+  // even if the company name was completely different (e.g. "Bata Colombia"
+  // matching "Cueros Velez USA" because same implementer).
+  // Better to log "no match" than associate incorrectly.
 
   return null;
 }
