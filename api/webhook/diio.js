@@ -44,6 +44,11 @@ function validateSignature(req, body) {
 
 // ===== EXTRACT COMPANY NAME FROM MEETING NAME =====
 function extractCompanyName(meetingName) {
+  // Clean up: strip leading dashes, dots, spaces, special chars
+  // Fixes names like "- Sofía Abuhadba" → "Sofía Abuhadba"
+  const cleaned = meetingName.replace(/^[\s\-–—·•.,;:]+/, '').trim();
+  if (!cleaned) return meetingName.trim();
+
   // Convention: "[NombreEmpresa] - Onboarding Multivende"
   const patterns = [
     /^(.+?)\s*-\s*Onboarding Multivende/i,
@@ -52,11 +57,14 @@ function extractCompanyName(meetingName) {
   ];
 
   for (const pattern of patterns) {
-    const match = meetingName.match(pattern);
-    if (match) return match[1].trim();
+    const match = cleaned.match(pattern);
+    if (match) {
+      const name = match[1].trim();
+      if (name.length >= 2) return name;
+    }
   }
 
-  return meetingName.trim();
+  return cleaned;
 }
 
 // ===== SMART STATUS COMPUTATION (Option 4) =====
