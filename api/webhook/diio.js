@@ -14,6 +14,13 @@ const PORTFOLIOS = [
 // Supported event types
 const SUPPORTED_ACTIONS = ['meeting.finished'];
 
+// Only process meetings where at least one seller is from the onboarding team
+const ONBOARDING_TEAM_EMAILS = [
+  'blaya@multivende.com',
+  'angela@multivende.com',
+  'douglas@multivende.com',
+];
+
 // Status severity order (higher = worse)
 const STATUS_SEVERITY = {
   'on_track': 0,    // En curso
@@ -535,6 +542,17 @@ export default async function handler(req, res) {
       const meetingName = body.name || '';
       const companyName = extractCompanyName(meetingName);
       const sellerEmails = body.attendees?.sellers?.map(s => s.email) || [];
+
+      // Only process meetings from the onboarding team
+      const isOnboardingTeam = sellerEmails.some(email =>
+        ONBOARDING_TEAM_EMAILS.includes(email.toLowerCase())
+      );
+      if (!isOnboardingTeam) {
+        return res.status(200).json({
+          status: 'skipped',
+          message: `Meeting not from onboarding team: [${sellerEmails.join(', ')}]`,
+        });
+      }
 
       const tv = body.tracker_values || {};
       const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
