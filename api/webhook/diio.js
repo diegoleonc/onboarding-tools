@@ -540,21 +540,14 @@ export default async function handler(req, res) {
       const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
       const successOdds = tv.success_odds?.value ?? tv.success_odds ?? null;
 
-      logEvent(action, meetingName, null, true, `Extracted company: "${companyName}"`, {
-        sentiment,
-        successOdds,
-        rawSuccessOdds: tv.success_odds,
-        meetingId: body.id,
-        sellerEmails,
-        companyExtracted: companyName,
-      });
-
       const project = await findAsanaProject(companyName, sellerEmails, token);
 
       if (!project) {
         logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`, {
           sentiment,
           successOdds,
+          meetingId: body.id,
+          sellerEmails,
           companyExtracted: companyName,
         });
         return res.status(200).json({
@@ -573,6 +566,8 @@ export default async function handler(req, res) {
           sentiment,
           successOdds,
           meetingId: body.id,
+          sellerEmails,
+          companyExtracted: companyName,
         });
         return res.status(200).json({
           status: 'success',
