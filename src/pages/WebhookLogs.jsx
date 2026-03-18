@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Filter, RefreshCw, CheckCircle, XCircle, AlertTriangle, Video, ArrowUpDown } from 'lucide-react'
+import { Search, Filter, RefreshCw, CheckCircle, XCircle, AlertTriangle, Video, ArrowUpDown, Link } from 'lucide-react'
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:5173' : ''
 
@@ -8,6 +8,8 @@ function WebhookLogs() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [projects, setProjects] = useState([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('all')
@@ -37,6 +39,22 @@ function WebhookLogs() {
       setLoading(false)
     }
   }, [statusFilter, searchQuery, sortNewest])
+
+  // Fetch active projects (for manual assign dropdown)
+  const fetchProjects = useCallback(async () => {
+    if (projects.length > 0) return // Already loaded
+    setProjectsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/active-projects`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setProjects(data.projects || [])
+    } catch (err) {
+      console.error('Error loading projects:', err)
+    } finally {
+      setProjectsLoading(false)
+    }
+  }, [projects.length])
 
   useEffect(() => {
     fetchLogs()
@@ -155,7 +173,14 @@ function WebhookLogs() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {logs.map((log, i) => (
-                  <LogRow key={log.id || i} log={log} />
+                  <LogRow
+                    key={log.id || i}
+                    log={log}
+                    projects={projects}
+                    projectsLoading={projectsLoading}
+                    onLoadProjects={fetchProjects}
+                    onAssigned={fetchLogs}
+                  />
                 ))}
               </tbody>
             </table>
@@ -192,13 +217,18 @@ function StatCard({ label, value, color, icon }) {
   )
 }
 
-function LogRow({ log }) {
+function LogRow({ log, projects, projectsLoading, onLoadProjects, onAssigned }) {
   const [expanded, setExpanded] = useState(false)
+  const [selectedProject, setSelectedProject] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignResult, setAssignResult] = useState(null)
 
   const date = new Date(log.timestamp)
   const timeStr = date.toLocaleDateString('es-CL', {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
   })
+
+  const isUnmatched = !log.projectMatch
 
   const statusIcon = log.projectMatch
     ? <CheckCircle size={14} className="text-emerald-500" />
@@ -206,11 +236,13 @@ function LogRow({ log }) {
       ? <AlertTriangle size={14} className="text-amber-500" />
       : <XCircle size={14} className="text-red-500" />
 
-  const statusLabel = log.projectMatch
-    ? 'Asociado'
-    : log.success
-      ? 'Sin match'
-      : 'Error'
+  const statusLabel = log.manuallyAssigned
+    ? 'Manual'
+    : log.projectMatch
+      ? 'Asociado'
+      : log.success
+        ? 'Sin match'
+        : 'Error'
 
   const successOddsEmoji = {
     1: '🔴', 2: '🟠', 3: '🟡', 4: '🟢', 5: '🟢'
@@ -220,11 +252,38 @@ function LogRow({ log }) {
     1: '😟', 2: '😐', 3: '😊'
   }
 
+  const handleAssign = async () => {
+    if (!selectedProject) return
+    setAssigning(true)
+    setAssignResult(null)
+    try {
+      const res = await fetch(`${import.meta.env.DEV ? 'http://localhost:5173' : ''}/api/manual-assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logId: log.id, projectGid: selectedProject }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setAssignResult({ ok: true, message: `Asociado a ${data.projectName}` })
+        setTimeout(() => onAssigned(), 1500)
+      } else {
+        setAssignResult({ ok: false, message: data.error || 'Error' })
+      }
+    } catch (err) {
+      setAssignResult({ ok: false, message: err.message })
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   return (
     <>
       <tr
         className="hover:bg-slate-50 cursor-pointer transition-colors"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          setExpanded(!expanded)
+          if (!expanded && isUnmatched) onLoadProjects()
+        }}
       >
         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{timeStr}</td>
         <td className="px-4 py-3 font-medium text-slate-800 max-w-[200px] truncate" title={log.name}>
@@ -232,7 +291,12 @@ function LogRow({ log }) {
         </td>
         <td className="px-4 py-3">
           {log.projectMatch ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+              log.manuallyAssigned
+                ? 'bg-blue-50 text-blue-700'
+                : 'bg-emerald-50 text-emerald-700'
+            }`}>
+              {log.manuallyAssigned && <Link size={10} />}
               {log.projectMatch}
             </span>
           ) : (
@@ -286,6 +350,44 @@ function LogRow({ log }) {
             <div className="mt-3 text-xs text-slate-600 bg-white rounded p-2 border border-slate-200">
               <strong>Detalles:</strong> {log.details}
             </div>
+
+            {/* Manual assign section — only for unmatched logs */}
+            {isUnmatched && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs font-medium text-amber-800 mb-2">
+                  Asignar manualmente a un proyecto:
+                </p>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedProject}
+                    onChange={(e) => setSelectedProject(e.target.value)}
+                    disabled={projectsLoading || assigning}
+                    className="flex-1 text-sm border border-amber-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="">
+                      {projectsLoading ? 'Cargando proyectos...' : 'Seleccionar proyecto...'}
+                    </option>
+                    {projects.map(p => (
+                      <option key={p.gid} value={p.gid}>
+                        {p.name}{p.owner ? ` (${p.owner})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAssign}
+                    disabled={!selectedProject || assigning}
+                    className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {assigning ? 'Asignando...' : 'Asignar'}
+                  </button>
+                </div>
+                {assignResult && (
+                  <p className={`text-xs mt-2 ${assignResult.ok ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {assignResult.ok ? '✅' : '❌'} {assignResult.message}
+                  </p>
+                )}
+              </div>
+            )}
           </td>
         </tr>
       )}
