@@ -24,7 +24,8 @@ const STATUS_SEVERITY = {
 };
 
 // Human-managed statuses that the webhook should NEVER override
-const MANUAL_ONLY_STATUSES = ['on_hold', 'complete'];
+// Note: on_hold is NOT protected — a meeting means the project is active again
+const MANUAL_ONLY_STATUSES = ['complete'];
 
 // ===== SIGNATURE VALIDATION =====
 function validateSignature(req, body) {
