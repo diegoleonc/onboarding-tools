@@ -531,8 +531,7 @@ export default async function handler(req, res) {
   const action = body.action;
 
   if (!SUPPORTED_ACTIONS.includes(action)) {
-    logEvent(action || 'unknown', body.name || body.id, null, true,
-      `Skipped - unsupported event. Keys: ${Object.keys(body).join(', ')}`);
+    // Silently skip unsupported events (e.g. written_conversation.finished) — don't log
     return res.status(200).json({ status: 'ok', message: `Skipped event: ${action || 'unknown'}` });
   }
 
