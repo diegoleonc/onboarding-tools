@@ -15,10 +15,23 @@ function getRedis() {
 export default async function handler(req, res) {
   // CORS headers for frontend
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // DELETE: clear all logs
+  if (req.method === 'DELETE') {
+    const redis = getRedis();
+    if (!redis) return res.status(500).json({ error: 'Redis not configured' });
+    try {
+      await redis.del('webhook:logs');
+      return res.status(200).json({ status: 'ok', message: 'All logs cleared' });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const redis = getRedis();
