@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Filter, RefreshCw, CheckCircle, XCircle, AlertTriangle, MessageSquare, Video, ArrowUpDown } from 'lucide-react'
+import { Search, Filter, RefreshCw, CheckCircle, XCircle, AlertTriangle, Video, ArrowUpDown } from 'lucide-react'
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:5173' : ''
 
@@ -10,7 +10,6 @@ function WebhookLogs() {
   const [error, setError] = useState(null)
 
   // Filters
-  const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortNewest, setSortNewest] = useState(true)
@@ -20,7 +19,6 @@ function WebhookLogs() {
     setError(null)
     try {
       const params = new URLSearchParams({ limit: '200' })
-      if (typeFilter !== 'all') params.set('type', typeFilter)
       if (statusFilter !== 'all') params.set('status', statusFilter)
       if (searchQuery.trim()) params.set('search', searchQuery.trim())
 
@@ -38,15 +36,13 @@ function WebhookLogs() {
     } finally {
       setLoading(false)
     }
-  }, [typeFilter, statusFilter, searchQuery, sortNewest])
+  }, [statusFilter, searchQuery, sortNewest])
 
   useEffect(() => {
     fetchLogs()
   }, [fetchLogs])
 
   // Stats
-  const totalMeetings = logs.filter(l => l.type === 'meeting').length
-  const totalWhatsapp = logs.filter(l => l.type === 'whatsapp').length
   const totalMatched = logs.filter(l => l.projectMatch).length
   const totalUnmatched = logs.filter(l => !l.projectMatch).length
 
@@ -57,7 +53,7 @@ function WebhookLogs() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Webhook Logs</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Historial de webhooks recibidos de DIIO y acciones en Asana
+            Historial de reuniones recibidas de DIIO y acciones en Asana
           </p>
         </div>
         <button
@@ -71,10 +67,9 @@ function WebhookLogs() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Total" value={total} color="slate" />
-        <StatCard label="Reuniones" value={totalMeetings} color="blue" icon={<Video size={16} />} />
-        <StatCard label="WhatsApp" value={totalWhatsapp} color="green" icon={<MessageSquare size={16} />} />
+      <div className="grid grid-cols-3 gap-4">
+        <StatCard label="Total" value={total} color="slate" icon={<Video size={16} />} />
+        <StatCard label="Asociadas" value={totalMatched} color="green" icon={<CheckCircle size={16} />} />
         <StatCard
           label="Sin match"
           value={totalUnmatched}
@@ -91,38 +86,27 @@ function WebhookLogs() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar por nombre, proyecto, contacto..."
+              placeholder="Buscar por nombre, proyecto..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
 
-          {/* Type filter */}
+          {/* Status filter */}
           <div className="flex items-center gap-1">
             <Filter size={14} className="text-slate-400" />
             <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
               className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="all">Todos los tipos</option>
-              <option value="meeting">Reuniones</option>
-              <option value="whatsapp">WhatsApp</option>
+              <option value="all">Todos los estados</option>
+              <option value="matched">Con match</option>
+              <option value="unmatched">Sin match</option>
+              <option value="error">Errores</option>
             </select>
           </div>
-
-          {/* Status filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="all">Todos los estados</option>
-            <option value="matched">Con match</option>
-            <option value="unmatched">Sin match</option>
-            <option value="error">Errores</option>
-          </select>
 
           {/* Sort */}
           <button
@@ -161,9 +145,9 @@ function WebhookLogs() {
               <thead>
                 <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                   <th className="px-4 py-3">Fecha</th>
-                  <th className="px-4 py-3">Tipo</th>
-                  <th className="px-4 py-3">Nombre</th>
+                  <th className="px-4 py-3">Reunión</th>
                   <th className="px-4 py-3">Proyecto Asana</th>
+                  <th className="px-4 py-3">Pred. Éxito</th>
                   <th className="px-4 py-3">Sentiment</th>
                   <th className="px-4 py-3">Estado</th>
                   <th className="px-4 py-3">Detalles</th>
@@ -216,12 +200,6 @@ function LogRow({ log }) {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
   })
 
-  const typeIcon = log.type === 'meeting'
-    ? <Video size={14} className="text-blue-500" />
-    : <MessageSquare size={14} className="text-green-500" />
-
-  const typeLabel = log.type === 'meeting' ? 'Reunión' : 'WhatsApp'
-
   const statusIcon = log.projectMatch
     ? <CheckCircle size={14} className="text-emerald-500" />
     : log.success
@@ -234,8 +212,12 @@ function LogRow({ log }) {
       ? 'Sin match'
       : 'Error'
 
+  const successOddsEmoji = {
+    1: '🔴', 2: '🟠', 3: '🟡', 4: '🟢', 5: '🟢'
+  }
+
   const sentimentEmoji = {
-    1: '😡', 2: '😟', 3: '😐', 4: '😊', 5: '🤩'
+    1: '😟', 2: '😐', 3: '😊'
   }
 
   return (
@@ -245,12 +227,6 @@ function LogRow({ log }) {
         onClick={() => setExpanded(!expanded)}
       >
         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{timeStr}</td>
-        <td className="px-4 py-3">
-          <span className="flex items-center gap-1.5">
-            {typeIcon}
-            <span className="text-slate-700">{typeLabel}</span>
-          </span>
-        </td>
         <td className="px-4 py-3 font-medium text-slate-800 max-w-[200px] truncate" title={log.name}>
           {log.name || '—'}
         </td>
@@ -264,9 +240,16 @@ function LogRow({ log }) {
           )}
         </td>
         <td className="px-4 py-3 text-center">
+          {log.successOdds != null ? (
+            <span title={`Predicción de éxito: ${log.successOdds}/5`}>
+              {successOddsEmoji[log.successOdds] || log.successOdds} {log.successOdds}/5
+            </span>
+          ) : '—'}
+        </td>
+        <td className="px-4 py-3 text-center">
           {log.sentiment != null ? (
-            <span title={`Sentiment: ${log.sentiment}/5`}>
-              {sentimentEmoji[log.sentiment] || log.sentiment}
+            <span title={`Sentimiento: ${log.sentiment}/3`}>
+              {sentimentEmoji[log.sentiment] || log.sentiment} {log.sentiment}/3
             </span>
           ) : '—'}
         </td>
@@ -284,26 +267,17 @@ function LogRow({ log }) {
         <tr>
           <td colSpan={7} className="bg-slate-50 px-6 py-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-              {log.matchedBy && (
-                <Detail label="Matched by" value={log.matchedBy} />
-              )}
-              {log.contactNames?.length > 0 && (
-                <Detail label="Contactos" value={log.contactNames.join(', ')} />
-              )}
-              {log.userEmails?.length > 0 && (
-                <Detail label="Emails" value={log.userEmails.join(', ')} />
+              {log.companyExtracted && (
+                <Detail label="Empresa extraída" value={log.companyExtracted} />
               )}
               {log.sellerEmails?.length > 0 && (
                 <Detail label="Sellers" value={log.sellerEmails.join(', ')} />
               )}
-              {log.companyExtracted && (
-                <Detail label="Empresa extraída" value={log.companyExtracted} />
-              )}
-              {log.integrationType && (
-                <Detail label="Integración" value={log.integrationType} />
+              {log.successOdds != null && (
+                <Detail label="Pred. éxito" value={`${log.successOdds}/5`} />
               )}
               {log.sentiment != null && (
-                <Detail label="Sentiment" value={`${log.sentiment}/5`} />
+                <Detail label="Sentiment" value={`${log.sentiment}/3`} />
               )}
               <Detail label="ID" value={log.id} />
               <Detail label="Timestamp" value={log.timestamp} />

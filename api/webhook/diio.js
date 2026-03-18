@@ -1,5 +1,5 @@
 // Vercel Serverless Function: Receive DIIO webhook and update Asana project status
-// Handles both meeting.finished and written_conversation.finished events
+// Handles meeting.finished events only
 import crypto from 'crypto';
 import { Redis } from '@upstash/redis';
 
@@ -12,7 +12,7 @@ const PORTFOLIOS = [
 ];
 
 // Supported event types
-const SUPPORTED_ACTIONS = ['meeting.finished', 'written_conversation.finished'];
+const SUPPORTED_ACTIONS = ['meeting.finished'];
 
 // Status severity order (higher = worse)
 const STATUS_SEVERITY = {
@@ -214,277 +214,6 @@ function successOddsLabel(odds) {
     5: '🟢 Muy alta',
   };
   return labels[val] || `Predicción: ${val}`;
-}
-
-// ===== EXTRACT COMPANY NAME FROM CONVERSATION TITLE =====
-// DIIO conversation names follow patterns like:
-//   "Conversación con Línea Estética Colombia - Multivende"
-//   "Conversación con Empresa XYZ"
-//   "Empresa ABC - Multivende"
-function extractCompanyFromConversationName(conversationName) {
-  if (!conversationName) return null;
-
-  const patterns = [
-    // "Conversación con [Company] - Multivende"
-    /^Conversaci[oó]n\s+con\s+(.+?)\s*-\s*Multivende/i,
-    // "Conversación con [Company]"
-    /^Conversaci[oó]n\s+con\s+(.+?)$/i,
-    // "[Company] - Multivende" (same as meetings)
-    /^(.+?)\s*-\s*Multivende/i,
-    // "[Company] - Onboarding Multivende"
-    /^(.+?)\s*-\s*Onboarding/i,
-    // Fallback: "[Company] - whatever"
-    /^(.+?)\s*-\s*/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = conversationName.match(pattern);
-    if (match) {
-      const name = match[1].trim();
-      if (name.length >= 2) return name;
-    }
-  }
-
-  return null;
-}
-
-// ===== EXTRACT INFO FROM WHATSAPP CONVERSATION =====
-function extractConversationInfo(body) {
-  const participants = body.participants || [];
-
-  // Separate contacts (clients) from users (implementers)
-  const contacts = [];
-  const users = [];
-
-  if (Array.isArray(participants)) {
-    for (const p of participants) {
-      if (p.email) {
-        users.push(p); // Users have email (implementers)
-      } else if (p.name || p.phone_numbers) {
-        contacts.push(p); // Contacts have name/phone (clients)
-      }
-    }
-  }
-
-  // Also check if participants is an object with specific structure
-  if (!Array.isArray(participants) && typeof participants === 'object') {
-    if (participants.users) users.push(...(Array.isArray(participants.users) ? participants.users : [participants.users]));
-    if (participants.contacts) contacts.push(...(Array.isArray(participants.contacts) ? participants.contacts : [participants.contacts]));
-  }
-
-  // Extract best candidate for company name from contact names
-  const contactNames = contacts.map(c => c.name).filter(Boolean);
-  const userEmails = users.map(u => u.email).filter(Boolean);
-
-  return { contactNames, userEmails, contacts, users };
-}
-
-// ===== FIND ASANA PROJECT FOR WHATSAPP CONVERSATION =====
-async function findAsanaProjectForConversation(conversationName, contactNames, userEmails, token) {
-  // Strategy 0 (BEST): Extract company from conversation title (e.g. "Conversación con Empresa - Multivende")
-  const companyFromTitle = extractCompanyFromConversationName(conversationName);
-  if (companyFromTitle) {
-    console.log(`Conversation title match: extracted "${companyFromTitle}" from "${conversationName}"`);
-
-    // Use the same matching logic as meetings — typeahead + portfolio verification
-    const searchResults = await asanaRequest(
-      `/workspaces/592491987465948/typeahead?resource_type=project&query=${encodeURIComponent(companyFromTitle)}&count=10`,
-      token
-    );
-
-    if (searchResults?.data?.length > 0) {
-      for (const result of searchResults.data) {
-        const projectName = result.name.toLowerCase();
-        const searchName = companyFromTitle.toLowerCase();
-
-        if (projectName.includes(searchName) || searchName.includes(projectName.split(' ')[0])) {
-          const project = await isProjectInPortfolios(result.gid, token);
-          if (project) {
-            return { project, matchedBy: 'conversation_title', matchedValue: companyFromTitle };
-          }
-        }
-      }
-    }
-
-    // Fallback: portfolio scan with company name from title
-    for (const portfolioGid of PORTFOLIOS) {
-      const items = await asanaRequest(
-        `/portfolios/${portfolioGid}/items?opt_fields=name,completed&limit=100`,
-        token
-      );
-
-      if (items?.data) {
-        for (const project of items.data) {
-          if (project.completed) continue;
-          const projectNameLower = project.name.toLowerCase();
-          const searchNameLower = companyFromTitle.toLowerCase();
-
-          if (projectNameLower.includes(searchNameLower) || searchNameLower.includes(projectNameLower.split(' ')[0])) {
-            return { project, matchedBy: 'conversation_title_portfolio', matchedValue: companyFromTitle };
-          }
-
-          const words = searchNameLower.split(/\s+/).filter(w => w.length > 2);
-          if (words.length > 1 && words.every(w => projectNameLower.includes(w))) {
-            return { project, matchedBy: 'conversation_title_fuzzy', matchedValue: companyFromTitle };
-          }
-        }
-      }
-    }
-  }
-
-  // Strategy 1: Extract company name from contact names
-  // Convention: contacts are saved as "NombreEmpresa - NombrePersona"
-  // We extract the part before the dash and match it against Asana projects (same logic as meetings)
-  for (const contactName of contactNames) {
-    // Strip leading special chars (same cleanup as extractCompanyName)
-    const cleaned = contactName.replace(/^[\s\-–—·•.,;:]+/, '').trim();
-    if (!cleaned) continue;
-
-    // Extract company part: everything before the first dash
-    const dashMatch = cleaned.match(/^(.+?)\s*-\s*/);
-    const companyPart = dashMatch ? dashMatch[1].trim() : null;
-
-    if (!companyPart || companyPart.length < 3) {
-      console.log(`WhatsApp Strategy 1: skipping contact "${contactName}" — no company prefix found`);
-      continue;
-    }
-
-    console.log(`WhatsApp Strategy 1: extracted company "${companyPart}" from contact "${contactName}"`);
-
-    // Typeahead search in Asana
-    const searchResults = await asanaRequest(
-      `/workspaces/592491987465948/typeahead?resource_type=project&query=${encodeURIComponent(companyPart)}&count=10`,
-      token
-    );
-
-    if (searchResults?.data?.length > 0) {
-      for (const result of searchResults.data) {
-        const projectName = result.name.toLowerCase();
-        const searchName = companyPart.toLowerCase();
-
-        // Prefix match: project starts with company name or vice versa
-        if (projectName.startsWith(searchName)) {
-          const project = await isProjectInPortfolios(result.gid, token);
-          if (project) {
-            return { project, matchedBy: 'contact_company_typeahead', matchedValue: companyPart };
-          }
-        }
-
-        // Match against project prefix (part before dash in project name)
-        const projectPrefix = projectName.split(/\s*-\s*/)[0].trim();
-        if (projectPrefix.startsWith(searchName) || searchName.startsWith(projectPrefix)) {
-          const project = await isProjectInPortfolios(result.gid, token);
-          if (project) {
-            return { project, matchedBy: 'contact_company_typeahead', matchedValue: companyPart };
-          }
-        }
-      }
-    }
-  }
-
-  // Strategy 2: Match by implementer email → project owner (unique match only)
-  if (userEmails.length > 0) {
-    const candidateProjects = [];
-    for (const portfolioGid of PORTFOLIOS) {
-      const items = await asanaRequest(
-        `/portfolios/${portfolioGid}/items?opt_fields=name,completed,owner,owner.email&limit=100`,
-        token
-      );
-
-      if (items?.data) {
-        const owned = items.data.filter(
-          p => !p.completed && userEmails.includes(p.owner?.email)
-        );
-        candidateProjects.push(...owned);
-      }
-    }
-
-    // Only return if there's exactly one match (otherwise ambiguous)
-    if (candidateProjects.length === 1) {
-      return { project: candidateProjects[0], matchedBy: 'implementer_email', matchedValue: userEmails[0] };
-    }
-
-    // If multiple matches, log for debugging but don't return
-    if (candidateProjects.length > 1) {
-      console.log(`Multiple projects (${candidateProjects.length}) found for implementer ${userEmails[0]}: ${candidateProjects.map(p => p.name).join(', ')}`);
-    }
-  }
-
-  return null;
-}
-
-// ===== CREATE ASANA STATUS UPDATE FOR CONVERSATION =====
-async function createConversationStatusUpdate(projectGid, body, matchInfo, token) {
-  const tv = body.tracker_values || {};
-  const summary = stripMarkdown(tv.summary?.value) || 'Sin resumen disponible';
-  const pains = stripMarkdown(tv.customer_pains?.value);
-  const objections = stripMarkdown(tv.objections?.value);
-  const unresolvedQueries = stripMarkdown(tv.unresolve_queries?.value);
-  const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
-  const successOdds = tv.success_odds?.value ?? tv.success_odds ?? null;
-  const playbook = body.playbook?.name || '';
-  const convType = body.conversation_type || body.type || '';
-
-  // Compute smart status using success_odds (NOT sentiment)
-  const statusResult = await computeSmartStatus(projectGid, successOdds, token);
-
-  if (statusResult.skipped) {
-    console.log(`Skipping status change for project ${projectGid}: ${statusResult.reason}`);
-  }
-
-  const today = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-  // Extract company name from conversation title for a cleaner display
-  const companyFromTitle = extractCompanyFromConversationName(body.name);
-
-  // Build status update text
-  let text = `💬 Resumen conversación WhatsApp — ${today}`;
-  if (convType) text += `\nTipo: ${convType}`;
-  if (playbook) text += `\nPlaybook: ${playbook}`;
-  const soLabel = successOddsLabel(successOdds);
-  if (soLabel) text += `\n🎯 Predicción de éxito: ${soLabel} (${successOdds}/5)`;
-  const sLabel = sentimentLabel(sentiment);
-  if (sLabel) text += `\n💬 Sentimiento del cliente: ${sLabel} (${sentiment}/3)`;
-  text += `\n\n${summary}`;
-
-  if (pains) {
-    text += `\n\n🔴 Dolores del cliente:\n${pains}`;
-  }
-
-  if (objections) {
-    text += `\n\n⚠️ Objeciones:\n${objections}`;
-  }
-
-  if (unresolvedQueries) {
-    text += `\n\n❓ Temas pendientes:\n${unresolvedQueries}`;
-  }
-
-  // Participant info
-  const info = extractConversationInfo(body);
-  if (info.contactNames.length > 0 || info.userEmails.length > 0) {
-    const parts = [];
-    if (info.contactNames.length > 0) parts.push(`Cliente: ${info.contactNames.join(', ')}`);
-    if (info.userEmails.length > 0) parts.push(`Implementador: ${info.users.map(u => u.name || u.email).join(', ')}`);
-    text += `\n\n👥 Participantes: ${parts.join(' | ')}`;
-  }
-
-  text += `\n\n🔗 Match: ${matchInfo.matchedBy} (${matchInfo.matchedValue})`;
-  text += `\n— Actualización automática vía DIIO (WhatsApp)`;
-
-  // Title: use company name if available, otherwise generic
-  const titleCompany = companyFromTitle || matchInfo.matchedValue || 'WhatsApp';
-  const title = `WhatsApp ${today} — ${titleCompany}`;
-
-  const response = await asanaRequest('/status_updates', token, 'POST', {
-    data: {
-      parent: projectGid,
-      status_type: statusResult.statusType,
-      title: title,
-      text: text,
-    },
-  });
-
-  return response;
 }
 
 // ===== CHECK IF PROJECT BELONGS TO OUR PORTFOLIOS =====
@@ -720,7 +449,7 @@ async function logEvent(action, meetingName, projectName, success, details = '',
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     action: action || 'unknown',
-    type: (action === 'meeting.finished') ? 'meeting' : 'whatsapp',
+    type: 'meeting',
     name: meetingName || '',
     projectMatch: projectName || null,
     success,
@@ -778,13 +507,10 @@ export default async function handler(req, res) {
     id: body.id,
     integration_type: body.integration_type,
     name: body.name,
-    conversation_type: body.conversation_type || body.type,
     hasTrackerValues: !!body.tracker_values,
     trackerKeys: body.tracker_values ? Object.keys(body.tracker_values) : [],
     rawSentiment: _tv.sentiment,
     rawSuccessOdds: _tv.success_odds,
-    hasParticipants: !!body.participants,
-    participantCount: Array.isArray(body.participants) ? body.participants.length : 0,
     keys: Object.keys(body),
   }));
 
@@ -794,15 +520,11 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  // Detect event type:
-  // 1. Meetings have action: "meeting.finished"
-  // 2. Conversations may NOT have an action field — detect by integration_type + tracker_values
   const action = body.action;
-  const isConversation = !action && body.integration_type && body.tracker_values;
 
-  if (!SUPPORTED_ACTIONS.includes(action) && !isConversation) {
+  if (!SUPPORTED_ACTIONS.includes(action)) {
     logEvent(action || 'unknown', body.name || body.id, null, true,
-      `Skipped - unrecognized event. Keys: ${Object.keys(body).join(', ')}`);
+      `Skipped - unsupported event. Keys: ${Object.keys(body).join(', ')}`);
     return res.status(200).json({ status: 'ok', message: `Skipped event: ${action || 'unknown'}` });
   }
 
@@ -863,64 +585,6 @@ export default async function handler(req, res) {
         return res.status(500).json({
           status: 'error',
           message: `Failed to create status update on "${project.name}"`,
-        });
-      }
-    }
-
-    // ===== WHATSAPP CONVERSATION PROCESSED =====
-    // Detected by: integration_type present + tracker_values present, OR action contains 'written_conversation'
-    if (isConversation || (action && action.includes('written_conversation'))) {
-      const convInfo = extractConversationInfo(body);
-      const convId = body.id || 'unknown';
-      const convName = body.name || '';
-
-      const convTv = body.tracker_values || {};
-      const convSentiment = convTv.sentiment?.value ?? convTv.sentiment ?? null;
-      const convSuccessOdds = convTv.success_odds?.value ?? convTv.success_odds ?? null;
-
-      logEvent(action || 'conversation', convName || convId, null, true,
-        `Name: "${convName}" | Contacts: [${convInfo.contactNames.join(', ')}] | Users: [${convInfo.userEmails.join(', ')}]`,
-        { sentiment: convSentiment, successOdds: convSuccessOdds, contactNames: convInfo.contactNames, userEmails: convInfo.userEmails, integrationType: body.integration_type }
-      );
-
-      const matchResult = await findAsanaProjectForConversation(
-        convName, convInfo.contactNames, convInfo.userEmails, token
-      );
-
-      if (!matchResult) {
-        logEvent(action, convId, null, false,
-          `No project found. Contacts: [${convInfo.contactNames.join(', ')}], Users: [${convInfo.userEmails.join(', ')}]`
-        );
-        return res.status(200).json({
-          status: 'warning',
-          message: 'No matching Asana project found for WhatsApp conversation',
-          conversationId: convId,
-          contactNames: convInfo.contactNames,
-          userEmails: convInfo.userEmails,
-        });
-      }
-
-      const statusUpdate = await createConversationStatusUpdate(
-        matchResult.project.gid, body, matchResult, token
-      );
-
-      if (statusUpdate) {
-        logEvent(action || 'conversation', convId, matchResult.project.name, true,
-          `Status update created (matched by ${matchResult.matchedBy}: ${matchResult.matchedValue})`,
-          { sentiment: convSentiment, successOdds: convSuccessOdds, matchedBy: matchResult.matchedBy, contactNames: convInfo.contactNames }
-        );
-        return res.status(200).json({
-          status: 'success',
-          message: `Status update created on "${matchResult.project.name}" from WhatsApp`,
-          projectGid: matchResult.project.gid,
-          statusUpdateGid: statusUpdate.data?.gid,
-          matchedBy: matchResult.matchedBy,
-        });
-      } else {
-        logEvent(action, convId, matchResult.project.name, false, 'Failed to create status update');
-        return res.status(500).json({
-          status: 'error',
-          message: `Failed to create status update on "${matchResult.project.name}"`,
         });
       }
     }
