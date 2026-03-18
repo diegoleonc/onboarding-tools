@@ -541,31 +541,46 @@ export default async function handler(req, res) {
     if (action === 'meeting.finished') {
       const meetingName = body.name || '';
       const companyName = extractCompanyName(meetingName);
-      const sellerEmails = body.attendees?.sellers?.map(s => s.email) || [];
+      // Extract seller emails from multiple possible DIIO payload structures
+      const sellerEmails = [];
+      if (body.attendees?.sellers) {
+        sellerEmails.push(...body.attendees.sellers.map(s => s.email).filter(Boolean));
+      }
+      if (body.sellers) {
+        sellerEmails.push(...(Array.isArray(body.sellers) ? body.sellers : [body.sellers]).map(s => s.email || s).filter(Boolean));
+      }
+      if (body.participants) {
+        const parts = Array.isArray(body.participants) ? body.participants : [];
+        sellerEmails.push(...parts.filter(p => p.email && p.role !== 'customer').map(p => p.email).filter(Boolean));
+      }
+      // Deduplicate
+      const uniqueSellerEmails = [...new Set(sellerEmails.map(e => e.toLowerCase()))];
 
-      // Only process meetings from the onboarding team
-      const isOnboardingTeam = sellerEmails.some(email =>
-        ONBOARDING_TEAM_EMAILS.includes(email.toLowerCase())
-      );
-      if (!isOnboardingTeam) {
-        return res.status(200).json({
-          status: 'skipped',
-          message: `Meeting not from onboarding team: [${sellerEmails.join(', ')}]`,
-        });
+      // Only filter if we actually have seller emails; if DIIO doesn't send them, let it through
+      if (uniqueSellerEmails.length > 0) {
+        const isOnboardingTeam = uniqueSellerEmails.some(email =>
+          ONBOARDING_TEAM_EMAILS.includes(email)
+        );
+        if (!isOnboardingTeam) {
+          return res.status(200).json({
+            status: 'skipped',
+            message: `Meeting not from onboarding team: [${uniqueSellerEmails.join(', ')}]`,
+          });
+        }
       }
 
       const tv = body.tracker_values || {};
       const sentiment = tv.sentiment?.value ?? tv.sentiment ?? null;
       const successOdds = tv.success_odds?.value ?? tv.success_odds ?? null;
 
-      const project = await findAsanaProject(companyName, sellerEmails, token);
+      const project = await findAsanaProject(companyName, uniqueSellerEmails, token);
 
       if (!project) {
         logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`, {
           sentiment,
           successOdds,
           meetingId: body.id,
-          sellerEmails,
+          sellerEmails: uniqueSellerEmails,
           companyExtracted: companyName,
         });
         return res.status(200).json({
@@ -584,7 +599,7 @@ export default async function handler(req, res) {
           sentiment,
           successOdds,
           meetingId: body.id,
-          sellerEmails,
+          sellerEmails: uniqueSellerEmails,
           companyExtracted: companyName,
         });
         return res.status(200).json({
