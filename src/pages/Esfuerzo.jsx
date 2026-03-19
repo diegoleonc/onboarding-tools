@@ -373,11 +373,25 @@ export default function Esfuerzo() {
                       labelFormatter={(label, payload) => payload?.[0]?.payload?.fullLabel || label}
                       formatter={(value, name, props) => {
                         if (name === 'conReunión') return [value, 'Con reunión']
-                        return [value, 'Sin reunión']
+                        if (name === 'sinReunión') return [value, 'Sin reunión']
+                        return [value, name]
+                      }}
+                      itemSorter={() => -1}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null
+                        const data = payload[0]?.payload
+                        return (
+                          <div style={{ ...tooltipStyle.contentStyle, padding: '10px 14px' }}>
+                            <p style={{ fontWeight: 600, marginBottom: 4, fontSize: 12 }}>{data?.fullLabel || label}</p>
+                            <p style={{ fontSize: 12, color: BRAND.green }}>Con reunión: {data?.conReunión}</p>
+                            <p style={{ fontSize: 12, color: BRAND.red }}>Sin reunión: {data?.sinReunión}</p>
+                            <p style={{ fontSize: 12, color: BRAND.navy, fontWeight: 600, marginTop: 4, borderTop: '1px solid #e2e8f0', paddingTop: 4 }}>Total activos: {data?.total}</p>
+                          </div>
+                        )
                       }}
                     />
                     <Bar dataKey="conReunión" stackId="a" fill={BRAND.green} radius={[0, 0, 0, 0]} name="conReunión" />
-                    <Bar dataKey="sinReunión" stackId="a" fill="#e2e8f0" radius={[4, 4, 0, 0]} name="sinReunión" />
+                    <Bar dataKey="sinReunión" stackId="a" fill={BRAND.red} radius={[4, 4, 0, 0]} name="sinReunión" />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
