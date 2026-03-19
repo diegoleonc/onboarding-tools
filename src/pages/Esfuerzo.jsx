@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Clock, MessageSquare, Video, RefreshCw, TrendingUp, ArrowUpDown, ExternalLink, Search, Loader2 } from 'lucide-react'
+import { Clock, Video, RefreshCw, TrendingUp, ArrowUpDown, ExternalLink, Search, Loader2 } from 'lucide-react'
 
 // Multivende brand colors
 const BRAND = {
@@ -44,7 +44,8 @@ export default function Esfuerzo() {
   const [error, setError] = useState(null)
   const [sortField, setSortField] = useState('totalHours')
   const [sortDir, setSortDir] = useState('desc')
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState('active')
+  const [ownerFilter, setOwnerFilter] = useState('all')
   const [search, setSearch] = useState('')
 
   async function fetchMetrics() {
@@ -89,12 +90,18 @@ export default function Esfuerzo() {
 
   const { projects, totals, meta } = data
 
+  // Get unique owners for dropdown
+  const owners = [...new Set(projects.map(p => p.owner))].sort()
+
   let filtered = projects
   if (filter === 'active') filtered = filtered.filter(p => !p.completed)
   if (filter === 'completed') filtered = filtered.filter(p => p.completed)
+  if (ownerFilter !== 'all') {
+    filtered = filtered.filter(p => p.owner === ownerFilter)
+  }
   if (search) {
     const s = search.toLowerCase()
-    filtered = filtered.filter(p => p.name.toLowerCase().includes(s) || p.owner.toLowerCase().includes(s))
+    filtered = filtered.filter(p => p.name.toLowerCase().includes(s))
   }
 
   const sorted = [...filtered].sort((a, b) => {
@@ -111,15 +118,13 @@ export default function Esfuerzo() {
       name: p.name.split(' - ')[0].substring(0, 20),
       horas: p.totalHours,
       reuniones: p.meetings,
-      conversaciones: p.conversations,
     }))
 
   const ownerMap = {}
   for (const p of filtered) {
-    if (!ownerMap[p.owner]) ownerMap[p.owner] = { owner: p.owner, hours: 0, meetings: 0, conversations: 0, projects: 0 }
+    if (!ownerMap[p.owner]) ownerMap[p.owner] = { owner: p.owner, hours: 0, meetings: 0, projects: 0 }
     ownerMap[p.owner].hours += p.totalHours
     ownerMap[p.owner].meetings += p.meetings
-    ownerMap[p.owner].conversations += p.conversations
     ownerMap[p.owner].projects++
   }
   const ownerData = Object.values(ownerMap)
@@ -154,7 +159,7 @@ export default function Esfuerzo() {
           <div>
             <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: 'Poppins, sans-serif' }}>Esfuerzo por Proyecto</h1>
             <p className="text-white/60 text-sm">
-              Métricas de tiempo efectivo basadas en reuniones y conversaciones DIIO
+              Métricas de tiempo efectivo basadas en reuniones DIIO
               {meta?.fetchedAt && (
                 <span className="ml-2 text-white/40">
                   — {new Date(meta.fetchedAt).toLocaleTimeString('es-CL')}
@@ -173,9 +178,8 @@ export default function Esfuerzo() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <KpiCard icon={<Video size={18} />} label="Reuniones totales" value={totals.meetings} color={BRAND.blue} />
-        <KpiCard icon={<MessageSquare size={18} />} label="Conversaciones" value={totals.conversations} color={BRAND.pink} />
         <KpiCard icon={<Clock size={18} />} label="Tiempo total" value={formatHours(totals.totalHours)} sub={`${totals.totalMinutes} minutos`} color={BRAND.green} />
         <KpiCard icon={<TrendingUp size={18} />} label="Promedio por proyecto" value={totals.projectsWithActivity > 0 ? formatHours(Math.round(totals.totalHours / totals.projectsWithActivity * 10) / 10) : '—'} sub={`${totals.projectsWithActivity} proyectos con actividad`} color={BRAND.orange} />
       </div>
@@ -194,8 +198,7 @@ export default function Esfuerzo() {
                   {...tooltipStyle}
                   formatter={(value, name) => {
                     if (name === 'horas') return [`${value}h`, 'Horas']
-                    if (name === 'reuniones') return [value, 'Reuniones']
-                    return [value, 'Conversaciones']
+                    return [value, 'Reuniones']
                   }}
                 />
                 <Bar dataKey="horas" fill={BRAND.blue} radius={[0, 6, 6, 0]} />
@@ -236,7 +239,7 @@ export default function Esfuerzo() {
                       <span className="text-slate-600">{o.owner}</span>
                     </div>
                     <div className="text-slate-500">
-                      {formatHours(o.hours)} · {o.meetings}r · {o.conversations}c · {o.projects}p
+                      {formatHours(o.hours)} · {o.meetings}r · {o.projects}p
                     </div>
                   </div>
                 ))}
@@ -268,11 +271,25 @@ export default function Esfuerzo() {
             </button>
           ))}
         </div>
+
+        {/* Owner dropdown */}
+        <select
+          value={ownerFilter}
+          onChange={e => setOwnerFilter(e.target.value)}
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 bg-white"
+          style={{ '--tw-ring-color': BRAND.blue }}
+        >
+          <option value="all">Todos los implementadores</option>
+          {owners.map(o => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar proyecto o implementador..."
+            placeholder="Buscar proyecto..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2"
@@ -295,9 +312,6 @@ export default function Esfuerzo() {
                 <th className="text-left px-3 py-3 text-slate-600 font-medium">Implementador</th>
                 <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('meetings')}>
                   Reuniones <SortIcon field="meetings" />
-                </th>
-                <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('conversations')}>
-                  Conversaciones <SortIcon field="conversations" />
                 </th>
                 <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('totalHours')}>
                   Horas <SortIcon field="totalHours" />
@@ -339,15 +353,6 @@ export default function Esfuerzo() {
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-center">
-                    {p.conversations > 0 ? (
-                      <span className="inline-flex items-center gap-1 font-medium" style={{ color: BRAND.pink }}>
-                        <MessageSquare size={12} /> {p.conversations}
-                      </span>
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
-                  </td>
                   <td className="px-3 py-3 text-center font-medium" style={{ color: BRAND.navy }}>
                     {p.totalHours > 0 ? formatHours(p.totalHours) : <span className="text-slate-300">—</span>}
                   </td>
@@ -361,7 +366,7 @@ export default function Esfuerzo() {
               ))}
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400">
+                  <td colSpan={6} className="text-center py-8 text-slate-400">
                     No se encontraron proyectos
                   </td>
                 </tr>

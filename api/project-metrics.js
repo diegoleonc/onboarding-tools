@@ -1,5 +1,5 @@
 // Vercel Serverless Function: Calculate effort metrics per project
-// Reads status updates from Asana to compute meetings, conversations, and time spent
+// Reads status updates from Asana to compute meetings and time spent
 export const config = {
   maxDuration: 60, // Allow up to 60 seconds (Vercel Pro/Hobby limit)
 };
@@ -83,17 +83,15 @@ async function getStatusUpdatesForProject(projectGid, token) {
 
 function parseMetricsFromUpdates(updates) {
   let meetings = 0;
-  let conversations = 0;
   let totalMinutes = 0;
   const meetingDates = [];
-  const conversationDates = [];
 
   for (const update of updates) {
     const title = update.title || '';
     const text = update.text || '';
     const createdAt = update.created_at;
 
-    // Detect meetings: title contains "Reunión" or text starts with "📋 Resumen reunión"
+    // Detect DIIO meetings: title contains "Reunión" or text starts with "📋 Resumen reunión"
     if (title.includes('Reunión') || title.includes('Reunion') || text.includes('Resumen reunión')) {
       meetings++;
       if (createdAt) meetingDates.push(createdAt);
@@ -104,21 +102,15 @@ function parseMetricsFromUpdates(updates) {
         totalMinutes += parseInt(durationMatch[1]);
       }
     }
-    // Detect conversations: title contains "WhatsApp" or text starts with "💬"
-    else if (title.includes('WhatsApp') || text.includes('Resumen conversación WhatsApp')) {
-      conversations++;
-      if (createdAt) conversationDates.push(createdAt);
-    }
   }
 
   return {
     meetings,
-    conversations,
-    totalUpdates: meetings + conversations,
+    totalUpdates: meetings,
     totalMinutes,
     totalHours: Math.round((totalMinutes / 60) * 10) / 10,
-    firstActivity: [...meetingDates, ...conversationDates].sort()[0] || null,
-    lastActivity: [...meetingDates, ...conversationDates].sort().pop() || null,
+    firstActivity: meetingDates.sort()[0] || null,
+    lastActivity: meetingDates.sort().pop() || null,
   };
 }
 
@@ -179,11 +171,10 @@ export default async function handler(req, res) {
     // Compute global totals
     const totals = results.reduce((acc, r) => ({
       meetings: acc.meetings + r.meetings,
-      conversations: acc.conversations + r.conversations,
       totalMinutes: acc.totalMinutes + r.totalMinutes,
       totalHours: Math.round((acc.totalMinutes + r.totalMinutes) / 60 * 10) / 10,
       projectsWithActivity: acc.projectsWithActivity + (r.totalUpdates > 0 ? 1 : 0),
-    }), { meetings: 0, conversations: 0, totalMinutes: 0, totalHours: 0, projectsWithActivity: 0 });
+    }), { meetings: 0, totalMinutes: 0, totalHours: 0, projectsWithActivity: 0 });
 
     return res.status(200).json({
       projects: results,
