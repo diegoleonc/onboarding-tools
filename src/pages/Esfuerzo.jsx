@@ -221,6 +221,33 @@ export default function Esfuerzo() {
       reuniones: p.meetings,
     }))
 
+  // Weekly coverage chart: for each week, how many active projects had meetings vs didn't
+  const weeklyCoverage = useMemo(() => {
+    const activeOnly = rawProjects.filter(p => !p.completed)
+    if (activeOnly.length === 0) return []
+
+    const totalActive = activeOnly.length
+    const coverageByWeek = {}
+
+    // For each week option, count how many projects had at least one meeting
+    for (const w of weekOptions) {
+      const withMeeting = activeOnly.filter(p =>
+        p.meetingDetails?.some(m => m.date && isDateInWeek(m.date, w.monday, w.sunday))
+      ).length
+      coverageByWeek[w.value] = {
+        semana: `S${w.week}`,
+        fullLabel: w.label,
+        conReunión: withMeeting,
+        sinReunión: totalActive - withMeeting,
+        total: totalActive,
+        pct: Math.round(withMeeting / totalActive * 100),
+      }
+    }
+
+    // Only show last 12 weeks
+    return Object.values(coverageByWeek).slice(0, 12).reverse()
+  }, [rawProjects, weekOptions])
+
   // Status distribution for pie chart (active projects only)
   const activeProjects = rawProjects.filter(p => !p.completed) // Always use raw for status pie
   const statusCounts = {}
@@ -332,29 +359,62 @@ export default function Esfuerzo() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 card-hover">
-          <h3 className="text-sm font-semibold mb-3" style={{ color: BRAND.navy }}>
-            Top 15 — Horas por proyecto{weekFilter !== 'all' && ' (semana)'}
-          </h3>
-          {topByHours.length > 0 ? (
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={topByHours} layout="vertical" margin={{ left: 10, right: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11, fontFamily: 'Poppins' }} />
-                <Tooltip
-                  {...tooltipStyle}
-                  formatter={(value, name) => {
-                    if (name === 'horas') return [`${value}h`, 'Horas']
-                    return [value, 'Reuniones']
-                  }}
-                />
-                <Bar dataKey="horas" fill={BRAND.blue} radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          {weekFilter === 'all' ? (
+            <>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: BRAND.navy }}>
+                Cobertura semanal — Proyectos con reunión vs sin reunión
+              </h3>
+              {weeklyCoverage.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={weeklyCoverage} margin={{ left: 0, right: 20, top: 5, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="semana" tick={{ fontSize: 11, fontFamily: 'Poppins' }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      {...tooltipStyle}
+                      labelFormatter={(label, payload) => payload?.[0]?.payload?.fullLabel || label}
+                      formatter={(value, name, props) => {
+                        if (name === 'conReunión') return [value, 'Con reunión']
+                        return [value, 'Sin reunión']
+                      }}
+                    />
+                    <Bar dataKey="conReunión" stackId="a" fill={BRAND.green} radius={[0, 0, 0, 0]} name="conReunión" />
+                    <Bar dataKey="sinReunión" stackId="a" fill="#e2e8f0" radius={[4, 4, 0, 0]} name="sinReunión" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
+                  Sin datos disponibles
+                </div>
+              )}
+            </>
           ) : (
-            <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
-              {weekFilter !== 'all' ? 'Sin reuniones en esta semana' : 'Sin datos de duración disponibles'}
-            </div>
+            <>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: BRAND.navy }}>
+                Top 15 — Horas por proyecto (semana)
+              </h3>
+              {topByHours.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={topByHours} layout="vertical" margin={{ left: 10, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis type="number" tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11, fontFamily: 'Poppins' }} />
+                    <Tooltip
+                      {...tooltipStyle}
+                      formatter={(value, name) => {
+                        if (name === 'horas') return [`${value}h`, 'Horas']
+                        return [value, 'Reuniones']
+                      }}
+                    />
+                    <Bar dataKey="horas" fill={BRAND.blue} radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
+                  Sin reuniones en esta semana
+                </div>
+              )}
+            </>
           )}
         </div>
 
