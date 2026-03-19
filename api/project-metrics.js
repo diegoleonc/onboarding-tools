@@ -71,7 +71,16 @@ async function getProjectsFromPortfolios(token) {
     })
   );
 
-  return portfolioResults.flat();
+  // Deduplicate projects that appear in multiple portfolios
+  const seen = new Set();
+  const unique = [];
+  for (const p of portfolioResults.flat()) {
+    if (!seen.has(p.gid)) {
+      seen.add(p.gid);
+      unique.push(p);
+    }
+  }
+  return unique;
 }
 
 async function getStatusUpdatesForProject(projectGid, token) {
