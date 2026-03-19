@@ -259,8 +259,9 @@ function LogRow({ log, projects, projectsLoading, onLoadProjects, onAssigned }) 
         ? 'Sin match'
         : 'Error'
 
+  // Match Asana status colors: 1-2 → at_risk (yellow), 3-5 → on_track (green)
   const successOddsEmoji = {
-    1: '🔴', 2: '🟠', 3: '🟡', 4: '🟢', 5: '🟢'
+    1: '🟡', 2: '🟡', 3: '🟢', 4: '🟢', 5: '🟢'
   }
 
   const sentimentEmoji = {
