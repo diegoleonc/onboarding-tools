@@ -100,8 +100,9 @@ function parseMetricsFromUpdates(updates) {
     const text = update.text || '';
     const createdAt = update.created_at;
 
-    // Detect DIIO meetings: title contains "Reunión" or text starts with "📋 Resumen reunión"
-    if (title.includes('Reunión') || title.includes('Reunion') || text.includes('Resumen reunión')) {
+    // Only count DIIO-generated meetings (our webhook always adds this signature)
+    const isDiioUpdate = text.includes('Actualización automática vía DIIO');
+    if (isDiioUpdate && (title.includes('Reunión') || title.includes('Reunion') || text.includes('Resumen reunión'))) {
       meetings++;
       if (createdAt) meetingDates.push(createdAt);
 
