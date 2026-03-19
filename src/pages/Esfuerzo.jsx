@@ -391,23 +391,57 @@ export default function Esfuerzo() {
                     <XAxis dataKey="semana" tick={{ fontSize: 11, fontFamily: 'Poppins' }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip
-                      {...tooltipStyle}
-                      labelFormatter={(label, payload) => payload?.[0]?.payload?.fullLabel || label}
-                      formatter={(value, name, props) => {
-                        if (name === 'conReunión') return [value, 'Con reunión']
-                        if (name === 'sinReunión') return [value, 'Sin reunión']
-                        return [value, name]
-                      }}
-                      itemSorter={() => -1}
-                      content={({ active, payload, label }) => {
+                      cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+                      content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
-                        const data = payload[0]?.payload
+                        const d = payload[0]?.payload
+                        if (!d) return null
                         return (
-                          <div style={{ ...tooltipStyle.contentStyle, padding: '10px 14px' }}>
-                            <p style={{ fontWeight: 600, marginBottom: 4, fontSize: 12 }}>{data?.fullLabel || label}</p>
-                            <p style={{ fontSize: 12, color: BRAND.green }}>Con reunión: {data?.conReunión}</p>
-                            <p style={{ fontSize: 12, color: BRAND.red }}>Sin reunión: {data?.sinReunión}</p>
-                            <p style={{ fontSize: 12, color: BRAND.navy, fontWeight: 600, marginTop: 4, borderTop: '1px solid #e2e8f0', paddingTop: 4 }}>Total activos: {data?.total}</p>
+                          <div style={{
+                            background: 'white',
+                            borderRadius: 12,
+                            padding: '14px 18px',
+                            boxShadow: '0 8px 30px rgba(0,0,0,0.12)',
+                            border: '1px solid #e2e8f0',
+                            minWidth: 200,
+                            fontFamily: 'Poppins, sans-serif',
+                          }}>
+                            <p style={{ fontWeight: 700, fontSize: 13, color: BRAND.navy, marginBottom: 10 }}>{d.fullLabel}</p>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+                                <span style={{ width: 8, height: 8, borderRadius: 4, background: BRAND.green, display: 'inline-block' }} />
+                                Con reunión
+                              </span>
+                              <span style={{ fontWeight: 600, fontSize: 13, color: BRAND.green }}>{d.conReunión}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+                                <span style={{ width: 8, height: 8, borderRadius: 4, background: BRAND.red, display: 'inline-block' }} />
+                                Sin reunión
+                              </span>
+                              <span style={{ fontWeight: 600, fontSize: 13, color: BRAND.red }}>{d.sinReunión}</span>
+                            </div>
+                            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: 12, color: '#6b7280' }}>Total activos</span>
+                              <span style={{ fontWeight: 700, fontSize: 13, color: BRAND.navy }}>{d.total}</span>
+                            </div>
+                            <div style={{
+                              marginTop: 8,
+                              background: '#f1f5f9',
+                              borderRadius: 6,
+                              height: 6,
+                              overflow: 'hidden',
+                            }}>
+                              <div style={{
+                                height: '100%',
+                                width: `${d.pct}%`,
+                                background: BRAND.green,
+                                borderRadius: 6,
+                              }} />
+                            </div>
+                            <p style={{ textAlign: 'center', fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                              {d.pct}% de cobertura
+                            </p>
                           </div>
                         )
                       }}
