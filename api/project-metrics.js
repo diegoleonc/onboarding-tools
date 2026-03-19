@@ -114,13 +114,20 @@ function parseMetricsFromUpdates(updates) {
     }
   }
 
+  const sortedDates = meetingDates.sort();
+  const lastMeeting = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : null;
+  const daysSinceLastMeeting = lastMeeting
+    ? Math.floor((Date.now() - new Date(lastMeeting).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
   return {
     meetings,
     totalUpdates: meetings,
     totalMinutes,
     totalHours: Math.round((totalMinutes / 60) * 10) / 10,
-    firstActivity: meetingDates.sort()[0] || null,
-    lastActivity: meetingDates.sort().pop() || null,
+    firstActivity: sortedDates[0] || null,
+    lastActivity: lastMeeting,
+    daysSinceLastMeeting,
   };
 }
 
@@ -180,12 +187,18 @@ export default async function handler(req, res) {
     results.sort((a, b) => b.totalHours - a.totalHours);
 
     // Compute global totals
-    const totals = results.reduce((acc, r) => ({
-      meetings: acc.meetings + r.meetings,
-      totalMinutes: acc.totalMinutes + r.totalMinutes,
-      totalHours: Math.round((acc.totalMinutes + r.totalMinutes) / 60 * 10) / 10,
-      projectsWithActivity: acc.projectsWithActivity + (r.totalUpdates > 0 ? 1 : 0),
-    }), { meetings: 0, totalMinutes: 0, totalHours: 0, projectsWithActivity: 0 });
+    const totals = results.reduce((acc, r) => {
+      const isActive = !r.completed;
+      const isNeglected = isActive && (r.daysSinceLastMeeting === null || r.daysSinceLastMeeting > 7);
+      return {
+        meetings: acc.meetings + r.meetings,
+        totalMinutes: acc.totalMinutes + r.totalMinutes,
+        totalHours: Math.round((acc.totalMinutes + r.totalMinutes) / 60 * 10) / 10,
+        projectsWithActivity: acc.projectsWithActivity + (r.totalUpdates > 0 ? 1 : 0),
+        neglectedProjects: acc.neglectedProjects + (isNeglected ? 1 : 0),
+        activeProjects: acc.activeProjects + (isActive ? 1 : 0),
+      };
+    }, { meetings: 0, totalMinutes: 0, totalHours: 0, projectsWithActivity: 0, neglectedProjects: 0, activeProjects: 0 });
 
     return res.status(200).json({
       projects: results,

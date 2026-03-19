@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Clock, Video, RefreshCw, TrendingUp, ArrowUpDown, ExternalLink, Search, Loader2 } from 'lucide-react'
+import { Clock, Video, RefreshCw, TrendingUp, ArrowUpDown, ExternalLink, Search, Loader2, AlertTriangle } from 'lucide-react'
 
 // Multivende brand colors
 const BRAND = {
@@ -27,22 +27,18 @@ function formatHours(hours) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
-function EfficiencyBadge({ calendarDays, totalHours }) {
-  if (!calendarDays || calendarDays === 0 || totalHours === 0) return null
-  const ratio = totalHours / (calendarDays * 8) * 100
-  const color = ratio > 15 ? BRAND.green : ratio > 5 ? BRAND.orange : BRAND.red
-  return (
-    <span className="text-xs font-medium" style={{ color }} title={`${totalHours}h efectivas en ${calendarDays} días calendario`}>
-      {ratio.toFixed(1)}%
-    </span>
-  )
+function daysSinceLabel(days) {
+  if (days === null || days === undefined) return null
+  if (days === 0) return 'Hoy'
+  if (days === 1) return 'Ayer'
+  return `Hace ${days}d`
 }
 
 export default function Esfuerzo() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [sortField, setSortField] = useState('totalHours')
+  const [sortField, setSortField] = useState('daysSinceLastMeeting')
   const [sortDir, setSortDir] = useState('desc')
   const [filter, setFilter] = useState('active')
   const [ownerFilter, setOwnerFilter] = useState('all')
@@ -106,8 +102,8 @@ export default function Esfuerzo() {
 
   const STRING_FIELDS = ['owner', 'statusType']
   const sorted = [...filtered].sort((a, b) => {
-    const aVal = a[sortField] ?? ''
-    const bVal = b[sortField] ?? ''
+    const aVal = a[sortField] ?? (STRING_FIELDS.includes(sortField) ? '' : -1)
+    const bVal = b[sortField] ?? (STRING_FIELDS.includes(sortField) ? '' : -1)
     if (STRING_FIELDS.includes(sortField)) {
       const cmp = String(aVal).localeCompare(String(bVal))
       return sortDir === 'desc' ? -cmp : cmp
@@ -115,6 +111,7 @@ export default function Esfuerzo() {
     return sortDir === 'desc' ? (bVal || 0) - (aVal || 0) : (aVal || 0) - (bVal || 0)
   })
 
+  // Bar chart: top 15 by hours
   const topByHours = [...filtered]
     .filter(p => p.totalHours > 0)
     .sort((a, b) => b.totalHours - a.totalHours)
@@ -125,6 +122,31 @@ export default function Esfuerzo() {
       reuniones: p.meetings,
     }))
 
+  // Status distribution for pie chart (active projects only)
+  const activeProjects = projects.filter(p => !p.completed)
+  const statusCounts = {}
+  for (const p of activeProjects) {
+    const st = p.statusType || 'sin_estado'
+    statusCounts[st] = (statusCounts[st] || 0) + 1
+  }
+
+  const STATUS_PIE_CONFIG = {
+    on_track: { label: 'En curso', color: '#10b981' },
+    at_risk: { label: 'En riesgo', color: '#f59e0b' },
+    off_track: { label: 'Con retraso', color: '#ef4444' },
+    on_hold: { label: 'En espera', color: '#6366f1' },
+    sin_estado: { label: 'Sin estado', color: '#94a3b8' },
+  }
+
+  const statusPieData = Object.entries(statusCounts)
+    .map(([key, count]) => ({
+      name: STATUS_PIE_CONFIG[key]?.label || key,
+      value: count,
+      fill: STATUS_PIE_CONFIG[key]?.color || '#94a3b8',
+    }))
+    .sort((a, b) => b.value - a.value)
+
+  // Owner workload
   const ownerMap = {}
   for (const p of filtered) {
     if (!ownerMap[p.owner]) ownerMap[p.owner] = { owner: p.owner, hours: 0, meetings: 0, projects: 0 }
@@ -132,15 +154,7 @@ export default function Esfuerzo() {
     ownerMap[p.owner].meetings += p.meetings
     ownerMap[p.owner].projects++
   }
-  const ownerData = Object.values(ownerMap)
-    .filter(o => o.hours > 0)
-    .sort((a, b) => b.hours - a.hours)
-
-  const ownerPieData = ownerData.map((o, i) => ({
-    name: o.owner,
-    value: Math.round(o.hours * 10) / 10,
-    fill: CHART_COLORS[i % CHART_COLORS.length],
-  }))
+  const ownerData = Object.values(ownerMap).sort((a, b) => b.projects - a.projects)
 
   function toggleSort(field) {
     if (sortField === field) {
@@ -152,7 +166,7 @@ export default function Esfuerzo() {
   }
 
   const SortIcon = ({ field }) => (
-    <ArrowUpDown size={12} className={`inline ml-1`} style={{ color: sortField === field ? BRAND.blue : '#cbd5e1' }} />
+    <ArrowUpDown size={12} className="inline ml-1" style={{ color: sortField === field ? BRAND.blue : '#cbd5e1' }} />
   )
 
   return (
@@ -183,10 +197,18 @@ export default function Esfuerzo() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <KpiCard icon={<Video size={18} />} label="Reuniones totales" value={totals.meetings} color={BRAND.blue} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard
+          icon={<AlertTriangle size={18} />}
+          label="Sin atención"
+          value={totals.neglectedProjects}
+          sub={`>7 días sin reunión`}
+          color={totals.neglectedProjects > 0 ? BRAND.red : BRAND.green}
+          alert={totals.neglectedProjects > 0}
+        />
+        <KpiCard icon={<Video size={18} />} label="Reuniones DIIO" value={totals.meetings} sub={`${totals.activeProjects} proyectos activos`} color={BRAND.blue} />
         <KpiCard icon={<Clock size={18} />} label="Tiempo total" value={formatHours(totals.totalHours)} sub={`${totals.totalMinutes} minutos`} color={BRAND.green} />
-        <KpiCard icon={<TrendingUp size={18} />} label="Promedio por proyecto" value={totals.projectsWithActivity > 0 ? formatHours(Math.round(totals.totalHours / totals.projectsWithActivity * 10) / 10) : '—'} sub={`${totals.projectsWithActivity} proyectos con actividad`} color={BRAND.orange} />
+        <KpiCard icon={<TrendingUp size={18} />} label="Promedio por proyecto" value={totals.projectsWithActivity > 0 ? formatHours(Math.round(totals.totalHours / totals.projectsWithActivity * 10) / 10) : '—'} sub={`${totals.projectsWithActivity} con actividad`} color={BRAND.orange} />
       </div>
 
       {/* Charts Row */}
@@ -217,35 +239,33 @@ export default function Esfuerzo() {
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 card-hover">
-          <h3 className="text-sm font-semibold mb-3" style={{ color: BRAND.navy }}>Distribución por implementador</h3>
-          {ownerPieData.length > 0 ? (
+          <h3 className="text-sm font-semibold mb-3" style={{ color: BRAND.navy }}>Estado de proyectos activos</h3>
+          {statusPieData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
                   <Pie
-                    data={ownerPieData}
+                    data={statusPieData}
                     cx="50%" cy="50%"
                     innerRadius={50} outerRadius={80}
                     paddingAngle={2}
                     dataKey="value"
                   >
-                    {ownerPieData.map((entry, i) => (
+                    {statusPieData.map((entry, i) => (
                       <Cell key={i} fill={entry.fill} />
                     ))}
                   </Pie>
-                  <Tooltip {...tooltipStyle} formatter={(value) => `${value}h`} />
+                  <Tooltip {...tooltipStyle} formatter={(value) => `${value} proyectos`} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1.5 mt-2">
-                {ownerData.map((o, i) => (
-                  <div key={o.owner} className="flex items-center justify-between text-xs">
+                {statusPieData.map((s) => (
+                  <div key={s.name} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
-                      <span className="text-slate-600">{o.owner}</span>
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.fill }} />
+                      <span className="text-slate-600">{s.name}</span>
                     </div>
-                    <div className="text-slate-500">
-                      {formatHours(o.hours)} · {o.meetings}r · {o.projects}p
-                    </div>
+                    <span className="font-medium text-slate-700">{s.value}</span>
                   </div>
                 ))}
               </div>
@@ -253,6 +273,26 @@ export default function Esfuerzo() {
           ) : (
             <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
               Sin datos disponibles
+            </div>
+          )}
+
+          {/* Owner workload */}
+          {ownerData.length > 0 && (
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">Carga por implementador</h4>
+              <div className="space-y-1.5">
+                {ownerData.map((o, i) => (
+                  <div key={o.owner} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                      <span className="text-slate-600">{o.owner}</span>
+                    </div>
+                    <span className="text-slate-500">
+                      {o.projects}p · {o.meetings}r · {formatHours(o.hours)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -277,7 +317,6 @@ export default function Esfuerzo() {
           ))}
         </div>
 
-        {/* Owner dropdown */}
         <select
           value={ownerFilter}
           onChange={e => setOwnerFilter(e.target.value)}
@@ -303,7 +342,6 @@ export default function Esfuerzo() {
         </div>
         <span className="text-xs text-slate-400">
           {sorted.length} proyecto{sorted.length !== 1 ? 's' : ''}
-          {meta?.fetchedAt ? ` · ${new Date(meta.fetchedAt).toLocaleTimeString('es-CL')}` : ''}
         </span>
       </div>
 
@@ -326,10 +364,9 @@ export default function Esfuerzo() {
                 <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('totalHours')}>
                   Horas <SortIcon field="totalHours" />
                 </th>
-                <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('calendarDays')}>
-                  Días calendario <SortIcon field="calendarDays" />
+                <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('daysSinceLastMeeting')}>
+                  Última reunión <SortIcon field="daysSinceLastMeeting" />
                 </th>
-                <th className="text-center px-3 py-3 text-slate-600 font-medium">Eficiencia</th>
               </tr>
             </thead>
             <tbody>
@@ -369,17 +406,14 @@ export default function Esfuerzo() {
                   <td className="px-3 py-3 text-center font-medium" style={{ color: BRAND.navy }}>
                     {p.totalHours > 0 ? formatHours(p.totalHours) : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="px-3 py-3 text-center text-slate-600">
-                    {p.calendarDays != null ? `${p.calendarDays}d` : <span className="text-slate-300">—</span>}
-                  </td>
                   <td className="px-3 py-3 text-center">
-                    <EfficiencyBadge calendarDays={p.calendarDays} totalHours={p.totalHours} />
+                    <LastMeetingCell days={p.daysSinceLastMeeting} completed={p.completed} />
                   </td>
                 </tr>
               ))}
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-slate-400">
+                  <td colSpan={6} className="text-center py-8 text-slate-400">
                     No se encontraron proyectos
                   </td>
                 </tr>
@@ -415,14 +449,45 @@ function StatusBadge({ status }) {
   )
 }
 
-function KpiCard({ icon, label, value, sub, color }) {
+function LastMeetingCell({ days, completed }) {
+  if (completed) return <span className="text-slate-300 text-xs">—</span>
+  if (days === null || days === undefined) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600">
+        Sin reuniones
+      </span>
+    )
+  }
+  const label = daysSinceLabel(days)
+  if (days > 14) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600">
+        <AlertTriangle size={10} /> {label}
+      </span>
+    )
+  }
+  if (days > 7) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-600">
+        <AlertTriangle size={10} /> {label}
+      </span>
+    )
+  }
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 card-hover">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600">
+      {label}
+    </span>
+  )
+}
+
+function KpiCard({ icon, label, value, sub, color, alert }) {
+  return (
+    <div className={`bg-white rounded-2xl border shadow-sm p-5 card-hover ${alert ? 'border-red-200 bg-red-50/30' : 'border-slate-200'}`}>
       <div className="flex items-center gap-2 text-sm mb-2">
         <span style={{ color }}>{icon}</span>
         <span className="text-slate-500">{label}</span>
       </div>
-      <p className="text-2xl font-bold" style={{ color: BRAND.navy }}>{value}</p>
+      <p className="text-2xl font-bold" style={{ color: alert ? BRAND.red : BRAND.navy }}>{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
     </div>
   )
