@@ -222,14 +222,13 @@ export default function Esfuerzo() {
     }))
 
   // Weekly coverage chart: for each week, how many active projects had meetings vs didn't
-  const weeklyCoverage = useMemo(() => {
+  const weeklyCoverage = (() => {
     const activeOnly = rawProjects.filter(p => !p.completed)
     if (activeOnly.length === 0) return []
 
     const totalActive = activeOnly.length
     const coverageByWeek = {}
 
-    // For each week option, count how many projects had at least one meeting
     for (const w of weekOptions) {
       const withMeeting = activeOnly.filter(p =>
         p.meetingDetails?.some(m => m.date && isDateInWeek(m.date, w.monday, w.sunday))
@@ -244,9 +243,8 @@ export default function Esfuerzo() {
       }
     }
 
-    // Only show last 12 weeks
     return Object.values(coverageByWeek).slice(0, 12).reverse()
-  }, [rawProjects, weekOptions])
+  })()
 
   // Status distribution for pie chart (active projects only)
   const activeProjects = rawProjects.filter(p => !p.completed) // Always use raw for status pie
