@@ -310,6 +310,7 @@ export default function Esfuerzo() {
               <tr style={{ backgroundColor: '#F8FAFC' }} className="border-b border-slate-200">
                 <th className="text-left px-4 py-3 text-slate-600 font-medium">Proyecto</th>
                 <th className="text-left px-3 py-3 text-slate-600 font-medium">Implementador</th>
+                <th className="text-center px-3 py-3 text-slate-600 font-medium">Estado</th>
                 <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('meetings')}>
                   Reuniones <SortIcon field="meetings" />
                 </th>
@@ -345,6 +346,9 @@ export default function Esfuerzo() {
                   </td>
                   <td className="px-3 py-3 text-slate-600">{p.owner}</td>
                   <td className="px-3 py-3 text-center">
+                    <StatusBadge status={p.statusType} />
+                  </td>
+                  <td className="px-3 py-3 text-center">
                     {p.meetings > 0 ? (
                       <span className="inline-flex items-center gap-1 font-medium" style={{ color: BRAND.blue }}>
                         <Video size={12} /> {p.meetings}
@@ -366,7 +370,7 @@ export default function Esfuerzo() {
               ))}
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-slate-400">
+                  <td colSpan={7} className="text-center py-8 text-slate-400">
                     No se encontraron proyectos
                   </td>
                 </tr>
@@ -380,6 +384,28 @@ export default function Esfuerzo() {
 }
 
 // ===== SHARED COMPONENTS =====
+const STATUS_CONFIG = {
+  on_track: { label: 'En curso', bg: '#d1fae5', color: '#059669', dot: '#10b981' },
+  at_risk: { label: 'En riesgo', bg: '#fef3c7', color: '#d97706', dot: '#f59e0b' },
+  off_track: { label: 'Con retraso', bg: '#fee2e2', color: '#dc2626', dot: '#ef4444' },
+  on_hold: { label: 'En espera', bg: '#e0e7ff', color: '#4f46e5', dot: '#6366f1' },
+  complete: { label: 'Finalizado', bg: '#d1fae5', color: '#059669', dot: '#10b981' },
+}
+
+function StatusBadge({ status }) {
+  const cfg = STATUS_CONFIG[status]
+  if (!cfg) return <span className="text-slate-300 text-xs">—</span>
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ backgroundColor: cfg.bg, color: cfg.color }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cfg.dot }} />
+      {cfg.label}
+    </span>
+  )
+}
+
 function KpiCard({ icon, label, value, sub, color }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 card-hover">

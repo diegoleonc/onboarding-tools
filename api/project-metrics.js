@@ -62,7 +62,7 @@ async function getProjectsFromPortfolios(token) {
       const allItems = [];
       let offset = null;
       do {
-        const url = `/portfolios/${portfolioGid}/items?opt_fields=name,completed,completed_at,owner,owner.name,start_on,due_on,created_at,permalink_url&limit=100${offset ? `&offset=${offset}` : ''}`;
+        const url = `/portfolios/${portfolioGid}/items?opt_fields=name,completed,completed_at,owner,owner.name,start_on,due_on,created_at,permalink_url,current_status_update,current_status_update.status_type&limit=100${offset ? `&offset=${offset}` : ''}`;
         const result = await asanaRequest(url, token);
         if (result?.data) allItems.push(...result.data);
         offset = result?.next_page?.offset || null;
@@ -170,6 +170,7 @@ export default async function handler(req, res) {
         startOn: project.start_on || null,
         dueOn: project.due_on || null,
         permalink: project.permalink_url,
+        statusType: project.current_status_update?.status_type || null,
         calendarDays,
         ...metrics,
       };
