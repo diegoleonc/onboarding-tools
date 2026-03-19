@@ -221,25 +221,47 @@ export default function Esfuerzo() {
       reuniones: p.meetings,
     }))
 
-  // Weekly coverage chart: for each week, how many active projects had meetings vs didn't
+  // Weekly coverage chart: for each week, how many projects were ACTUALLY active that week
+  // A project was active in week X if:
+  //   - It was created/started on or before the end of that week, AND
+  //   - It was NOT completed before the start of that week
   const weeklyCoverage = (() => {
-    const activeOnly = rawProjects.filter(p => !p.completed)
-    if (activeOnly.length === 0) return []
+    if (rawProjects.length === 0) return []
 
-    const totalActive = activeOnly.length
     const coverageByWeek = {}
 
     for (const w of weekOptions) {
-      const withMeeting = activeOnly.filter(p =>
+      const weekStart = new Date(w.monday)
+      weekStart.setHours(0, 0, 0, 0)
+      const weekEnd = new Date(w.sunday)
+      weekEnd.setHours(23, 59, 59, 999)
+
+      // Projects that were active during this week
+      const activeThisWeek = rawProjects.filter(p => {
+        const created = p.startOn || p.firstActivity || p.completedAt // fallback: use any known date
+        if (!created) return !p.completed // no dates: assume active if not completed
+        const createdDate = new Date(created)
+        if (createdDate > weekEnd) return false // created after this week
+
+        if (p.completed && p.completedAt) {
+          const completedDate = new Date(p.completedAt)
+          if (completedDate < weekStart) return false // completed before this week
+        }
+        return true
+      })
+
+      const totalActive = activeThisWeek.length
+      const withMeeting = activeThisWeek.filter(p =>
         p.meetingDetails?.some(m => m.date && isDateInWeek(m.date, w.monday, w.sunday))
       ).length
+
       coverageByWeek[w.value] = {
         semana: `S${w.week}`,
         fullLabel: w.label,
         conReunión: withMeeting,
         sinReunión: totalActive - withMeeting,
         total: totalActive,
-        pct: Math.round(withMeeting / totalActive * 100),
+        pct: totalActive > 0 ? Math.round(withMeeting / totalActive * 100) : 0,
       }
     }
 
