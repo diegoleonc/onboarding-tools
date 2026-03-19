@@ -1,5 +1,5 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
-import { LayoutDashboard, Clock, Webhook } from 'lucide-react'
+import { LayoutDashboard, Clock } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Esfuerzo from './pages/Esfuerzo'
 import WebhookLogs from './pages/WebhookLogs'
@@ -62,7 +62,7 @@ function App() {
                   }`
                 }
               >
-                <Webhook size={18} />
+                <span className="text-xs font-black tracking-tight leading-none" style={{ fontFamily: 'Arial Black, sans-serif' }}>diio</span>
                 <span className="hidden sm:inline">Webhooks</span>
               </NavLink>
             </div>
