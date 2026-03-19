@@ -104,10 +104,15 @@ export default function Esfuerzo() {
     filtered = filtered.filter(p => p.name.toLowerCase().includes(s))
   }
 
+  const STRING_FIELDS = ['owner', 'statusType']
   const sorted = [...filtered].sort((a, b) => {
-    const aVal = a[sortField] ?? 0
-    const bVal = b[sortField] ?? 0
-    return sortDir === 'desc' ? bVal - aVal : aVal - bVal
+    const aVal = a[sortField] ?? ''
+    const bVal = b[sortField] ?? ''
+    if (STRING_FIELDS.includes(sortField)) {
+      const cmp = String(aVal).localeCompare(String(bVal))
+      return sortDir === 'desc' ? -cmp : cmp
+    }
+    return sortDir === 'desc' ? (bVal || 0) - (aVal || 0) : (aVal || 0) - (bVal || 0)
   })
 
   const topByHours = [...filtered]
@@ -309,8 +314,12 @@ export default function Esfuerzo() {
             <thead>
               <tr style={{ backgroundColor: '#F8FAFC' }} className="border-b border-slate-200">
                 <th className="text-left px-4 py-3 text-slate-600 font-medium">Proyecto</th>
-                <th className="text-left px-3 py-3 text-slate-600 font-medium">Implementador</th>
-                <th className="text-center px-3 py-3 text-slate-600 font-medium">Estado</th>
+                <th className="text-left px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('owner')}>
+                  Implementador <SortIcon field="owner" />
+                </th>
+                <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('statusType')}>
+                  Estado <SortIcon field="statusType" />
+                </th>
                 <th className="text-center px-3 py-3 text-slate-600 font-medium cursor-pointer select-none" onClick={() => toggleSort('meetings')}>
                   Reuniones <SortIcon field="meetings" />
                 </th>
