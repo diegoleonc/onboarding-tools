@@ -20,11 +20,28 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // DELETE: clear all logs
+  // DELETE: clear all logs or delete a single log by ID
   if (req.method === 'DELETE') {
     const redis = getRedis();
     if (!redis) return res.status(500).json({ error: 'Redis not configured' });
     try {
+      const { logId } = req.query;
+      if (logId) {
+        // Delete a single log entry by finding it in the sorted set
+        const rawLogs = await redis.zrange('webhook:logs', 0, -1);
+        let removed = false;
+        for (const entry of rawLogs) {
+          const parsed = typeof entry === 'string' ? JSON.parse(entry) : entry;
+          if (parsed.id === logId) {
+            await redis.zrem('webhook:logs', entry);
+            removed = true;
+            break;
+          }
+        }
+        if (!removed) return res.status(404).json({ error: 'Log not found' });
+        return res.status(200).json({ status: 'ok', message: `Log ${logId} deleted` });
+      }
+      // No logId = clear all
       await redis.del('webhook:logs');
       return res.status(200).json({ status: 'ok', message: 'All logs cleared' });
     } catch (err) {

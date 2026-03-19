@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Filter, RefreshCw, CheckCircle, XCircle, AlertTriangle, Video, ArrowUpDown, Link } from 'lucide-react'
+import { Search, Filter, RefreshCw, CheckCircle, XCircle, AlertTriangle, Video, ArrowUpDown, Link, Trash2 } from 'lucide-react'
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:5173' : ''
 
@@ -222,6 +222,21 @@ function LogRow({ log, projects, projectsLoading, onLoadProjects, onAssigned }) 
   const [selectedProject, setSelectedProject] = useState('')
   const [assigning, setAssigning] = useState(false)
   const [assignResult, setAssignResult] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async (e) => {
+    e.stopPropagation()
+    if (!confirm('¿Eliminar este log?')) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`${import.meta.env.DEV ? 'http://localhost:5173' : ''}/api/webhook-logs?logId=${log.id}`, { method: 'DELETE' })
+      if (res.ok) onAssigned() // refresh list
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const date = new Date(log.timestamp)
   const timeStr = date.toLocaleDateString('es-CL', {
@@ -323,8 +338,18 @@ function LogRow({ log, projects, projectsLoading, onLoadProjects, onAssigned }) 
             <span className="text-xs">{statusLabel}</span>
           </span>
         </td>
-        <td className="px-4 py-3 text-xs text-slate-500 max-w-[250px] truncate" title={log.details}>
-          {log.details}
+        <td className="px-4 py-3 text-xs text-slate-500 max-w-[200px] truncate" title={log.details}>
+          <div className="flex items-center gap-2">
+            <span className="truncate">{log.details}</span>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex-shrink-0 p-1 text-slate-300 hover:text-red-500 transition-colors rounded"
+              title="Eliminar log"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
         </td>
       </tr>
       {expanded && (
