@@ -91,9 +91,7 @@ async function getStatusUpdatesForProject(projectGid, token) {
 }
 
 function parseMetricsFromUpdates(updates) {
-  let meetings = 0;
-  let totalMinutes = 0;
-  const meetingDates = [];
+  const meetingDetails = [];
 
   for (const update of updates) {
     const title = update.title || '';
@@ -103,18 +101,17 @@ function parseMetricsFromUpdates(updates) {
     // Only count DIIO-generated meetings (our webhook always adds this signature)
     const isDiioUpdate = text.includes('Actualización automática vía DIIO');
     if (isDiioUpdate && (title.includes('Reunión') || title.includes('Reunion') || text.includes('Resumen reunión'))) {
-      meetings++;
-      if (createdAt) meetingDates.push(createdAt);
-
-      // Extract duration from text: "(XX min)"
+      let minutes = 0;
       const durationMatch = text.match(/\((\d+)\s*min\)/);
-      if (durationMatch) {
-        totalMinutes += parseInt(durationMatch[1]);
-      }
+      if (durationMatch) minutes = parseInt(durationMatch[1]);
+
+      meetingDetails.push({ date: createdAt, minutes });
     }
   }
 
-  const sortedDates = meetingDates.sort();
+  const meetings = meetingDetails.length;
+  const totalMinutes = meetingDetails.reduce((sum, m) => sum + m.minutes, 0);
+  const sortedDates = meetingDetails.map(m => m.date).filter(Boolean).sort();
   const lastMeeting = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : null;
   const daysSinceLastMeeting = lastMeeting
     ? Math.floor((Date.now() - new Date(lastMeeting).getTime()) / (1000 * 60 * 60 * 24))
@@ -128,6 +125,7 @@ function parseMetricsFromUpdates(updates) {
     firstActivity: sortedDates[0] || null,
     lastActivity: lastMeeting,
     daysSinceLastMeeting,
+    meetingDetails, // Array of { date, minutes } for frontend week filtering
   };
 }
 

@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Clock, Video, RefreshCw, TrendingUp, ArrowUpDown, ExternalLink, Search, Loader2, AlertTriangle } from 'lucide-react'
+import { Clock, Video, RefreshCw, TrendingUp, ArrowUpDown, ExternalLink, Search, Loader2, AlertTriangle, Calendar } from 'lucide-react'
 
 // Multivende brand colors
 const BRAND = {
@@ -34,6 +34,82 @@ function daysSinceLabel(days) {
   return `Hace ${days}d`
 }
 
+// ===== WEEK HELPERS =====
+function getISOWeek(date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7)
+  const yearStart = new Date(d.getFullYear(), 0, 4)
+  return Math.ceil(((d - yearStart) / 86400000 + yearStart.getDay() + 6) % 7 === 0 ? 0 : ((d - yearStart) / 86400000 + 1) / 7)
+}
+
+function getWeekRange(year, week) {
+  // Get Monday of ISO week
+  const jan4 = new Date(year, 0, 4)
+  const dayOfWeek = jan4.getDay() || 7
+  const monday = new Date(jan4)
+  monday.setDate(jan4.getDate() - dayOfWeek + 1 + (week - 1) * 7)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  return { monday, sunday }
+}
+
+function formatDateShort(date) {
+  return date.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
+}
+
+function generateWeekOptions() {
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentWeek = getISOWeek(now)
+  const weeks = []
+
+  // Show weeks from start of year to current week + next week
+  for (let w = currentWeek + 1; w >= 1; w--) {
+    const { monday, sunday } = getWeekRange(currentYear, w)
+    if (monday > now && w > currentWeek) continue
+    weeks.push({
+      value: `${currentYear}-W${String(w).padStart(2, '0')}`,
+      label: `Sem ${w} (${formatDateShort(monday)} – ${formatDateShort(sunday)})`,
+      year: currentYear,
+      week: w,
+      monday,
+      sunday,
+      isCurrent: w === currentWeek,
+    })
+  }
+  return weeks
+}
+
+function isDateInWeek(dateStr, weekStart, weekEnd) {
+  const d = new Date(dateStr)
+  const start = new Date(weekStart)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(weekEnd)
+  end.setHours(23, 59, 59, 999)
+  return d >= start && d <= end
+}
+
+// Filter project meetings by week and recompute metrics
+function filterProjectByWeek(project, weekStart, weekEnd) {
+  if (!project.meetingDetails) return project
+  const filtered = project.meetingDetails.filter(m => m.date && isDateInWeek(m.date, weekStart, weekEnd))
+  const totalMinutes = filtered.reduce((sum, m) => sum + m.minutes, 0)
+  const sortedDates = filtered.map(m => m.date).sort()
+  const lastMeeting = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : null
+  const daysSinceLastMeeting = lastMeeting
+    ? Math.floor((Date.now() - new Date(lastMeeting).getTime()) / (1000 * 60 * 60 * 24))
+    : project.daysSinceLastMeeting // Keep original if no meetings in week
+
+  return {
+    ...project,
+    meetings: filtered.length,
+    totalMinutes,
+    totalHours: Math.round((totalMinutes / 60) * 10) / 10,
+    daysSinceLastMeeting,
+  }
+}
+
 export default function Esfuerzo() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -43,6 +119,9 @@ export default function Esfuerzo() {
   const [filter, setFilter] = useState('active')
   const [ownerFilter, setOwnerFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [weekFilter, setWeekFilter] = useState('all')
+
+  const weekOptions = useMemo(() => generateWeekOptions(), [])
 
   async function fetchMetrics() {
     setLoading(true)
@@ -84,10 +163,16 @@ export default function Esfuerzo() {
 
   if (!data) return null
 
-  const { projects, totals, meta } = data
+  const { projects: rawProjects, meta } = data
+
+  // Apply week filter to meeting data (client-side, no extra API call)
+  const selectedWeek = weekOptions.find(w => w.value === weekFilter)
+  const projects = weekFilter === 'all'
+    ? rawProjects
+    : rawProjects.map(p => filterProjectByWeek(p, selectedWeek.monday, selectedWeek.sunday))
 
   // Get unique owners for dropdown
-  const owners = [...new Set(projects.map(p => p.owner))].sort()
+  const owners = [...new Set(rawProjects.map(p => p.owner))].sort()
 
   let filtered = projects
   if (filter === 'active') filtered = filtered.filter(p => !p.completed)
@@ -99,6 +184,20 @@ export default function Esfuerzo() {
     const s = search.toLowerCase()
     filtered = filtered.filter(p => p.name.toLowerCase().includes(s))
   }
+
+  // Compute totals from filtered data
+  const totals = filtered.reduce((acc, r) => {
+    const isActive = !r.completed
+    const isNeglected = isActive && (r.daysSinceLastMeeting === null || r.daysSinceLastMeeting > 7)
+    return {
+      meetings: acc.meetings + r.meetings,
+      totalMinutes: acc.totalMinutes + r.totalMinutes,
+      totalHours: Math.round((acc.totalMinutes + r.totalMinutes) / 60 * 10) / 10,
+      projectsWithActivity: acc.projectsWithActivity + (r.meetings > 0 ? 1 : 0),
+      neglectedProjects: acc.neglectedProjects + (isNeglected ? 1 : 0),
+      activeProjects: acc.activeProjects + (isActive ? 1 : 0),
+    }
+  }, { meetings: 0, totalMinutes: 0, totalHours: 0, projectsWithActivity: 0, neglectedProjects: 0, activeProjects: 0 })
 
   const STRING_FIELDS = ['owner', 'statusType']
   const sorted = [...filtered].sort((a, b) => {
@@ -123,7 +222,7 @@ export default function Esfuerzo() {
     }))
 
   // Status distribution for pie chart (active projects only)
-  const activeProjects = projects.filter(p => !p.completed)
+  const activeProjects = rawProjects.filter(p => !p.completed) // Always use raw for status pie
   const statusCounts = {}
   for (const p of activeProjects) {
     const st = p.statusType || 'sin_estado'
@@ -179,20 +278,39 @@ export default function Esfuerzo() {
             <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: 'Poppins, sans-serif' }}>Esfuerzo por Proyecto</h1>
             <p className="text-white/60 text-sm">
               Métricas de tiempo efectivo basadas en reuniones DIIO
-              {meta?.fetchedAt && (
-                <span className="ml-2 text-white/40">
-                  — {new Date(meta.fetchedAt).toLocaleTimeString('es-CL')}
+              {weekFilter !== 'all' && selectedWeek && (
+                <span className="ml-1 text-white/80 font-medium">
+                  — {selectedWeek.label}
                 </span>
               )}
             </p>
           </div>
-          <button
-            onClick={fetchMetrics}
-            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors backdrop-blur-sm"
-          >
-            <RefreshCw size={16} />
-            Actualizar
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Week selector */}
+            <div className="flex items-center gap-1.5 bg-white/10 rounded-lg px-3 py-2 backdrop-blur-sm">
+              <Calendar size={14} className="text-white/70" />
+              <select
+                value={weekFilter}
+                onChange={e => setWeekFilter(e.target.value)}
+                className="bg-transparent text-white text-sm border-none outline-none cursor-pointer"
+                style={{ WebkitAppearance: 'none', appearance: 'none', paddingRight: '8px' }}
+              >
+                <option value="all" className="text-slate-800">Todas las semanas</option>
+                {weekOptions.map(w => (
+                  <option key={w.value} value={w.value} className="text-slate-800">
+                    {w.isCurrent ? `${w.label} (actual)` : w.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={fetchMetrics}
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors backdrop-blur-sm"
+            >
+              <RefreshCw size={16} />
+              Actualizar
+            </button>
+          </div>
         </div>
       </div>
 
@@ -202,11 +320,11 @@ export default function Esfuerzo() {
           icon={<AlertTriangle size={18} />}
           label="Sin atención"
           value={totals.neglectedProjects}
-          sub={`>7 días sin reunión`}
+          sub={weekFilter === 'all' ? '>7 días sin reunión' : `Sin reunión en semana`}
           color={totals.neglectedProjects > 0 ? BRAND.red : BRAND.green}
           alert={totals.neglectedProjects > 0}
         />
-        <KpiCard icon={<Video size={18} />} label="Reuniones DIIO" value={totals.meetings} sub={`${totals.activeProjects} proyectos activos`} color={BRAND.blue} />
+        <KpiCard icon={<Video size={18} />} label="Reuniones DIIO" value={totals.meetings} sub={weekFilter === 'all' ? `${totals.activeProjects} proyectos activos` : selectedWeek?.label} color={BRAND.blue} />
         <KpiCard icon={<Clock size={18} />} label="Tiempo total" value={formatHours(totals.totalHours)} sub={`${totals.totalMinutes} minutos`} color={BRAND.green} />
         <KpiCard icon={<TrendingUp size={18} />} label="Promedio por proyecto" value={totals.projectsWithActivity > 0 ? formatHours(Math.round(totals.totalHours / totals.projectsWithActivity * 10) / 10) : '—'} sub={`${totals.projectsWithActivity} con actividad`} color={BRAND.orange} />
       </div>
@@ -214,7 +332,9 @@ export default function Esfuerzo() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 card-hover">
-          <h3 className="text-sm font-semibold mb-3" style={{ color: BRAND.navy }}>Top 15 — Horas por proyecto</h3>
+          <h3 className="text-sm font-semibold mb-3" style={{ color: BRAND.navy }}>
+            Top 15 — Horas por proyecto{weekFilter !== 'all' && ' (semana)'}
+          </h3>
           {topByHours.length > 0 ? (
             <ResponsiveContainer width="100%" height={320}>
               <BarChart data={topByHours} layout="vertical" margin={{ left: 10, right: 20 }}>
@@ -233,7 +353,7 @@ export default function Esfuerzo() {
             </ResponsiveContainer>
           ) : (
             <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
-              Sin datos de duración disponibles
+              {weekFilter !== 'all' ? 'Sin reuniones en esta semana' : 'Sin datos de duración disponibles'}
             </div>
           )}
         </div>
