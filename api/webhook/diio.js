@@ -575,7 +575,7 @@ export default async function handler(req, res) {
       const project = await findAsanaProject(companyName, uniqueSellerEmails, token);
 
       if (!project) {
-        logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`, {
+        await logEvent(action, meetingName, null, false, `No project found for company: "${companyName}"`, {
           sentiment,
           successOdds,
           meetingId: body.id,
@@ -594,7 +594,7 @@ export default async function handler(req, res) {
       const statusUpdate = await createStatusUpdate(project.gid, body, token);
 
       if (statusUpdate) {
-        logEvent(action, meetingName, project.name, true, 'Status update created', {
+        await logEvent(action, meetingName, project.name, true, 'Status update created', {
           sentiment,
           successOdds,
           meetingId: body.id,
@@ -609,7 +609,7 @@ export default async function handler(req, res) {
           _debug: { sentiment, successOdds, trackerKeys: Object.keys(tv) },
         });
       } else {
-        logEvent(action, meetingName, project.name, false, 'Failed to create status update');
+        await logEvent(action, meetingName, project.name, false, 'Failed to create status update');
         return res.status(500).json({
           status: 'error',
           message: `Failed to create status update on "${project.name}"`,
@@ -618,7 +618,7 @@ export default async function handler(req, res) {
     }
   } catch (error) {
     console.error('Webhook processing error:', error);
-    logEvent(action, body.name || body.id, null, false, error.message);
+    await logEvent(action, body.name || body.id, null, false, error.message);
     return res.status(500).json({ error: error.message });
   }
 }
