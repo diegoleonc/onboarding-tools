@@ -365,7 +365,7 @@ async function createStatusUpdate(projectGid, meetingData, token) {
   text += `\n\n${summary}`;
 
   if (pains) {
-    text += `\n\n🔴 Dolores del cliente:\n${pains}`;
+    text += `\n\n🔴 Dolores del cliente:\n${pains}`
   }
 
   if (objections) {
@@ -542,6 +542,25 @@ export default async function handler(req, res) {
       const companyName = extractCompanyName(meetingName);
       // Extract seller emails from multiple possible DIIO payload structures
       const sellerEmails = [];
+            // ===== DEDUPLICATION: Skip if this meeting was already processed =====
+            const meetingId = body.id;
+            if (meetingId) {
+                      const redis = getRedis();
+                      if (redis) {
+                                  const dedupeKey = `webhook:processed:${meetingId}`;
+                                  const alreadyProcessed = await redis.get(dedupeKey);
+                                  if (alreadyProcessed) {
+                                                console.log(`Duplicate webhook skipped: meetingId=${meetingId} (already processed at ${alreadyProcessed})`);
+                                                return res.status(200).json({
+                                                                status: 'skipped',
+                                                                message: `Duplicate webhook: meeting ${meetingId} already processed`,
+                                                });
+                                  }
+                                  // Mark as processed with 24h TTL
+                                  await redis.set(dedupeKey, new Date().toISOString(), { ex: 86400 });
+                      }
+            }
+      
       if (body.attendees?.sellers) {
         sellerEmails.push(...body.attendees.sellers.map(s => s.email).filter(Boolean));
       }
