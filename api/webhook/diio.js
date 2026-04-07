@@ -600,6 +600,14 @@ export default async function handler(req, res) {
           meetingId: body.id,
           sellerEmails: uniqueSellerEmails,
           companyExtracted: companyName,
+          // Store full payload so manual assignment can build the same rich status update
+          webhookPayload: {
+            tracker_values: body.tracker_values || {},
+            commitments: body.commitments,
+            duration: body.duration,
+            scheduled_at: body.scheduled_at,
+            attendees: body.attendees,
+          },
         });
         return res.status(200).json({
           status: 'warning',

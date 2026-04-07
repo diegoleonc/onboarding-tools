@@ -122,16 +122,64 @@ export default async function handler(req, res) {
       else if (daysRemaining <= 5 && statusType === 'on_track') statusType = 'at_risk';
     }
 
-    // Build status update text
-    const today = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    let text = `📋 Resumen reunión — ${today}`;
+    // Build status update text — use stored webhook payload for full details
+    const payload = logEntry.webhookPayload || {};
+    const tv = payload.tracker_values || {};
+    const rawDuration = payload.duration;
+    const duration = rawDuration ? Math.round(rawDuration / 60) : null;
+
+    // Strip markdown helper (inline)
+    const strip = (t) => t ? t
+      .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1')
+      .replace(/__(.*?)__/g, '$1').replace(/~~(.*?)~~/g, '$1')
+      .replace(/^#{1,6}\s+/gm, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') : '';
+
+    const summary = strip(tv.summary?.value) || '';
+    const pains = strip(tv.customer_pains?.value);
+    const objections = strip(tv.objections?.value);
+    const unresolvedQueries = strip(tv.unresolve_queries?.value);
+    const commitments = payload.commitments;
+
+    const meetingDate = payload.scheduled_at
+      ? new Date(payload.scheduled_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : new Date(logEntry.timestamp).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    let text = `📋 Resumen reunión ${meetingDate}`;
+    if (duration) text += ` (${duration} min)`;
     if (logEntry.name) text += `\n📎 Reunión DIIO: ${logEntry.name}`;
     const soLabel = successOddsLabel(successOdds);
     if (soLabel) text += `\n🎯 Predicción de éxito: ${soLabel} (${successOdds}/5)`;
     const sLabel = sentimentLabel(sentiment);
     if (sLabel) text += `\n💬 Sentimiento del cliente: ${sLabel} (${sentiment}/3)`;
-    text += `\n\n(Asignación manual desde Webhook Logs)`;
-    text += `\n— Actualización automática vía DIIO`;
+    if (summary) text += `\n\n${summary}`;
+
+    if (pains) text += `\n\n🔴 Dolores del cliente:\n${pains}`;
+    if (objections) text += `\n\n⚠️ Objeciones:\n${objections}`;
+    if (unresolvedQueries) text += `\n\n❓ Temas pendientes:\n${unresolvedQueries}`;
+
+    if (commitments) {
+      text += `\n\n✅ Compromisos:`;
+      if (typeof commitments === 'object' && !Array.isArray(commitments)) {
+        text += `\n- ${commitments.todo || ''}`;
+        if (commitments.who) text += ` (Responsable: ${commitments.who})`;
+        if (commitments.deadline) text += ` — Plazo: ${new Date(commitments.deadline).toLocaleDateString('es-CL')}`;
+      } else if (Array.isArray(commitments)) {
+        for (const c of commitments) {
+          text += `\n- ${c.todo || ''}`;
+          if (c.who) text += ` (${c.who})`;
+          if (c.deadline) text += ` — ${new Date(c.deadline).toLocaleDateString('es-CL')}`;
+        }
+      }
+    }
+
+    // Participants info
+    const sellers = payload.attendees?.sellers?.map(s => s.name).join(', ') || '';
+    const customers = payload.attendees?.customers?.map(c => c.name).join(', ') || '';
+    if (sellers || customers) {
+      text += `\n\n👥 Participantes: ${[sellers, customers].filter(Boolean).join(' | ')}`;
+    }
+
+    text += `\n— Actualización automática vía DIIO (asignación manual)`;
 
     // Create status update in Asana
     const statusUpdate = await asanaRequest('/status_updates', token, 'POST', {
