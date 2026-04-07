@@ -186,7 +186,7 @@ export default async function handler(req, res) {
       data: {
         parent: projectGid,
         status_type: statusType,
-        title: `Reunión ${today} — Resumen DIIO`,
+        title: `Reunión ${meetingDate} — Resumen DIIO`,
         text: text,
       },
     });
