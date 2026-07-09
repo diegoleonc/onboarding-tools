@@ -224,6 +224,21 @@ function successOddsLabel(odds) {
   return labels[val] || `Predicción: ${val}`;
 }
 
+// ===== FETCH ALL PORTFOLIO ITEMS (with pagination) =====
+async function fetchAllPortfolioItems(portfolioGid, optFields, token) {
+  const items = [];
+  let url = `/portfolios/${portfolioGid}/items?opt_fields=${optFields}&limit=100`;
+
+  while (url) {
+    const result = await asanaRequest(url, token);
+    if (!result?.data) break;
+    items.push(...result.data);
+    url = result.next_page?.path || null;
+  }
+
+  return items;
+}
+
 // ===== CHECK IF PROJECT BELONGS TO OUR PORTFOLIOS =====
 async function isProjectInPortfolios(projectGid, token) {
   const projectData = await asanaRequest(
@@ -233,11 +248,8 @@ async function isProjectInPortfolios(projectGid, token) {
   if (!projectData?.data || projectData.data.completed) return null;
 
   for (const portfolioGid of PORTFOLIOS) {
-    const items = await asanaRequest(
-      `/portfolios/${portfolioGid}/items?opt_fields=name&limit=100`,
-      token
-    );
-    if (items?.data?.some((p) => p.gid === projectGid)) {
+    const items = await fetchAllPortfolioItems(portfolioGid, 'name', token);
+    if (items.some((p) => p.gid === projectGid)) {
       return projectData.data;
     }
   }
@@ -276,16 +288,13 @@ async function findAsanaProject(companyName, sellerEmails, token) {
     }
   }
 
-  // Strategy 2: Search through portfolios for prefix match
+  // Strategy 2: Search through portfolios for prefix match (with full pagination)
   if (companyName.length >= MIN_COMPANY_NAME_LENGTH) {
     for (const portfolioGid of PORTFOLIOS) {
-      const items = await asanaRequest(
-        `/portfolios/${portfolioGid}/items?opt_fields=name,completed&limit=100`,
-        token
-      );
+      const items = await fetchAllPortfolioItems(portfolioGid, 'name,completed', token);
 
-      if (items?.data) {
-        for (const project of items.data) {
+      if (items) {
+        for (const project of items) {
           if (project.completed) continue;
           const projectNameLower = project.name.toLowerCase();
           const searchNameLower = companyName.toLowerCase();

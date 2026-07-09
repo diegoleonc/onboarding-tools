@@ -18,6 +18,21 @@ async function asanaRequest(path, token) {
   return res.json();
 }
 
+// Fetch ALL items from a portfolio, following pagination
+async function fetchAllPortfolioItems(portfolioGid, token) {
+  const items = [];
+  let url = `/portfolios/${portfolioGid}/items?opt_fields=name,completed,owner,owner.name&limit=100`;
+
+  while (url) {
+    const result = await asanaRequest(url, token);
+    if (!result?.data) break;
+    items.push(...result.data);
+    url = result.next_page?.path || null;
+  }
+
+  return items;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -33,23 +48,19 @@ export default async function handler(req, res) {
   try {
     const projects = [];
 
-    // Fetch all 3 portfolios in parallel
+    // Fetch all 3 portfolios in parallel (with full pagination)
     const portfolioResults = await Promise.all(
-      PORTFOLIOS.map(gid =>
-        asanaRequest(`/portfolios/${gid}/items?opt_fields=name,completed,owner,owner.name&limit=100`, token)
-      )
+      PORTFOLIOS.map(gid => fetchAllPortfolioItems(gid, token))
     );
 
-    for (const result of portfolioResults) {
-      if (result?.data) {
-        for (const p of result.data) {
-          if (!p.completed && !projects.some(existing => existing.gid === p.gid)) {
-            projects.push({
-              gid: p.gid,
-              name: p.name,
-              owner: p.owner?.name || null,
-            });
-          }
+    for (const items of portfolioResults) {
+      for (const p of items) {
+        if (!p.completed && !projects.some(existing => existing.gid === p.gid)) {
+          projects.push({
+            gid: p.gid,
+            name: p.name,
+            owner: p.owner?.name || null,
+          });
         }
       }
     }
