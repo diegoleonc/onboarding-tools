@@ -111,31 +111,46 @@ export function isComplexIntegration(channelName) {
   return complex.some(type => channelName.includes(type));
 }
 
-export function calculateEstimation(plan, type, totalChannels, channels) {
-  let baseDays = 0;
+// Fórmulas calibradas contra 1.083 proyectos históricos completados (2022-2026).
+// Ajuste robusto (Theil-Sen) sobre duraciones reales en días hábiles por segmento.
+// Cobertura de la banda optimista-conservador: 54% (vs 15% de las fórmulas originales).
+export const DEFAULT_CALIBRATION = {
+  segments: {
+    upgrade:      { base: 7,  perChannel: 3 },
+    reonboarding: { base: 22, perChannel: 4 },
+    starter:      { base: 26, perChannel: 5 },
+    pro:          { base: 35, perChannel: 8 },
+    gold:         { base: 35, perChannel: 8 },
+    advanced:     { base: 30, perChannel: 8 },
+    enterprise:   { base: 38, perChannel: 8 },
+    platinum:     { base: 38, perChannel: 8 }
+  },
+  complexExtraDays: 5, // solo aplica fuera de Upgrade; en los datos el efecto real es ~0-5d, no 16
+  multipliers: { optimista: 0.6, conservador: 1.7 }, // ≈ P25 y P80 empíricos
+  sampleSize: 1083,
+  source: 'static',
+  generatedAt: '2026-07-10'
+};
 
-  if (type === 'Upgrade') {
-    baseDays = 14 + 3 * totalChannels;
-  } else if (type === 'Reonboarding') {
-    baseDays = 59 + 5 * totalChannels;
-  } else {
-    switch (plan) {
-      case 'Starter': baseDays = 59 + 5 * totalChannels; break;
-      case 'Pro': baseDays = 56 + 12 * totalChannels; break;
-      case 'Advanced': baseDays = 48 + 18 * totalChannels; break;
-      case 'Enterprise': baseDays = 80 + 10 * totalChannels; break;
-      case 'Gold': baseDays = 56 + 12 * totalChannels; break;
-      case 'Platinum': baseDays = 65 + 14 * totalChannels; break;
-      default: baseDays = 59 + 5 * totalChannels;
-    }
+export function calculateEstimation(plan, type, totalChannels, channels, calibration) {
+  const cal = calibration && calibration.segments ? calibration : DEFAULT_CALIBRATION;
+  let seg;
+  if (type === 'Upgrade') seg = cal.segments.upgrade;
+  else if (type === 'Reonboarding') seg = cal.segments.reonboarding;
+  else seg = cal.segments[(plan || 'Starter').toLowerCase()] || cal.segments.starter;
+  if (!seg) seg = DEFAULT_CALIBRATION.segments.starter;
+
+  let baseDays = seg.base + seg.perChannel * totalChannels;
+
+  if (type !== 'Upgrade' && channels.some(c => isComplexIntegration(c))) {
+    baseDays += cal.complexExtraDays ?? DEFAULT_CALIBRATION.complexExtraDays;
   }
 
-  if (channels.some(c => isComplexIntegration(c))) baseDays += 16;
-
+  const mult = cal.multipliers || DEFAULT_CALIBRATION.multipliers;
   return {
     esperado: Math.round(baseDays),
-    optimista: Math.round(baseDays * 0.85),
-    conservador: Math.round(baseDays * 1.35)
+    optimista: Math.max(1, Math.round(baseDays * mult.optimista)),
+    conservador: Math.round(baseDays * mult.conservador)
   };
 }
 
@@ -167,27 +182,36 @@ export function generateTasks(parsed, estimate, startDateStr) {
   const tasks = [];
   const startDate = new Date(startDateStr);
 
-  // INICIO
+  // Cronograma proporcional a la estimación: con las fórmulas calibradas los
+  // proyectos son ~2x más cortos, así que los hitos se ubican como fracción de la
+  // duración total en vez de offsets fijos (que dejaban el CIERRE antes que los canales).
+  const T = Math.max(estimate, 10);
+  const day = (frac) => Math.round(T * frac);
+
+  // INICIO (0% - 25%)
   tasks.push({ section: 'INICIO', task: 'PRE KICK OFF', daysFromStart: 0 });
   tasks.push({ section: 'INICIO', task: 'ENVÍO DE FORMULARIO A MERCHANT', daysFromStart: 0 });
-  tasks.push({ section: 'INICIO', task: 'SECUENCIA DE INVITACIONES (ADMINISTRATIVO)', daysFromStart: 3 });
-  tasks.push({ section: 'INICIO', task: 'KICK OFF DEFINICIÓN FLUJO DE TRABAJO', daysFromStart: 4 });
-  tasks.push({ section: 'INICIO', task: 'WORKSHOP DE BIENVENIDA A MULTIVENDE', daysFromStart: 11 });
-  tasks.push({ section: 'INICIO', task: 'CREACIÓN CATÁLOGO DESDE CERO', daysFromStart: 18 });
+  tasks.push({ section: 'INICIO', task: 'SECUENCIA DE INVITACIONES (ADMINISTRATIVO)', daysFromStart: day(0.05) });
+  tasks.push({ section: 'INICIO', task: 'KICK OFF DEFINICIÓN FLUJO DE TRABAJO', daysFromStart: day(0.07) });
+  tasks.push({ section: 'INICIO', task: 'WORKSHOP DE BIENVENIDA A MULTIVENDE', daysFromStart: day(0.15) });
+  tasks.push({ section: 'INICIO', task: 'CREACIÓN CATÁLOGO DESDE CERO', daysFromStart: day(0.25) });
 
-  // WORKSHOP
-  const workshopEndDay = 25 + 7 * (parsed.channels.length + 1);
-  tasks.push({ section: 'WORKSHOP', task: 'WORKSHOP SOBRE LOGÍSTICA Y MENSAJERÍA EN MELI', daysFromStart: 25 });
-  tasks.push({ section: 'WORKSHOP', task: 'WORKSHOP SOBRE EL CATÁLOGO Y PUBLICACIONES', daysFromStart: 26 });
+  // WORKSHOP (30% - 45%)
+  const workshopEndDay = day(0.45);
+  tasks.push({ section: 'WORKSHOP', task: 'WORKSHOP SOBRE LOGÍSTICA Y MENSAJERÍA EN MELI', daysFromStart: day(0.3) });
+  tasks.push({ section: 'WORKSHOP', task: 'WORKSHOP SOBRE EL CATÁLOGO Y PUBLICACIONES', daysFromStart: day(0.3) + 1 });
 
   const uniqueChannels = [...new Set(parsed.channels)];
+  const wsStart = day(0.33);
+  const wsSpan = Math.max(workshopEndDay - wsStart, 1);
   uniqueChannels.forEach((ch, i) => {
-    tasks.push({ section: 'WORKSHOP', task: `WORKSHOP SOBRE ${ch}`, daysFromStart: 25 + 7 * (i + 2) });
+    const offset = uniqueChannels.length > 1 ? Math.round((i * wsSpan) / (uniqueChannels.length - 1)) : 0;
+    tasks.push({ section: 'WORKSHOP', task: `WORKSHOP SOBRE ${ch}`, daysFromStart: wsStart + offset });
   });
 
-  // Channel sections
-  const remainingDays = estimate - workshopEndDay - 3;
-  const daysPerChannel = Math.max(5, Math.floor(remainingDays / parsed.totalChannels));
+  // Channel sections (45% - 92%)
+  const remainingDays = day(0.92) - workshopEndDay;
+  const daysPerChannel = Math.max(3, Math.floor(remainingDays / parsed.totalChannels));
 
   let channelIndex = 0;
   const channelCounts = {};
@@ -211,10 +235,12 @@ export function generateTasks(parsed, estimate, startDateStr) {
     channelIndex++;
   }
 
-  // CIERRE
-  tasks.push({ section: 'CIERRE', task: 'CAPACITACIÓN SOBRE REPORTES Y NOTIFICACIONES', daysFromStart: estimate - 1 });
-  tasks.push({ section: 'CIERRE', task: 'REUNIÓN FINAL DUDAS Y CIERRE PROCESO ONBOARDING', daysFromStart: estimate });
-  tasks.push({ section: 'CIERRE', task: 'ENVIAR CORREO DE CIERRE DEL PROCESO DE ONBOARDING', daysFromStart: estimate });
+  // CIERRE (nunca antes del final del último canal)
+  const lastChannelEnd = workshopEndDay + parsed.totalChannels * daysPerChannel - 1;
+  const endDay = Math.max(estimate, lastChannelEnd + 1);
+  tasks.push({ section: 'CIERRE', task: 'CAPACITACIÓN SOBRE REPORTES Y NOTIFICACIONES', daysFromStart: endDay - 1 });
+  tasks.push({ section: 'CIERRE', task: 'REUNIÓN FINAL DUDAS Y CIERRE PROCESO ONBOARDING', daysFromStart: endDay });
+  tasks.push({ section: 'CIERRE', task: 'ENVIAR CORREO DE CIERRE DEL PROCESO DE ONBOARDING', daysFromStart: endDay });
 
   return tasks.map(t => ({
     section: t.section,

@@ -9,6 +9,15 @@ export async function fetchPortfolioProjects(type) {
   return res.json();
 }
 
+export async function fetchCalibration() {
+  const res = await fetch('/api/asana/calibration');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error obteniendo calibración');
+  }
+  return res.json();
+}
+
 export async function searchProjects(query) {
   const res = await fetch(`/api/asana/search?q=${encodeURIComponent(query)}`);
   if (!res.ok) {
