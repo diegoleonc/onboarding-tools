@@ -10,7 +10,7 @@ const PORTFOLIOS = {
 
 const OPT_FIELDS = [
   'name', 'owner', 'owner.name',
-  'current_status_update', 'current_status_update.status_type',
+  'current_status_update', 'current_status_update.status_type', 'current_status_update.created_at',
   'start_on', 'due_on', 'created_at', 'completed', 'completed_at',
   'custom_fields', 'custom_fields.name', 'custom_fields.display_value',
   'permalink_url',
@@ -160,6 +160,10 @@ function transformProject(project) {
   const planField = getCustomFieldValue(project, 'Plan');
   const paisField = getCustomFieldValue(project, 'País');
   const statusType = project.current_status_update?.status_type;
+  const statusUpdatedAt = project.current_status_update?.created_at || null;
+  const statusAgeDays = statusUpdatedAt
+    ? Math.floor((Date.now() - new Date(statusUpdatedAt)) / (1000 * 60 * 60 * 24))
+    : null;
 
   return {
     gid: project.gid,
@@ -179,6 +183,8 @@ function transformProject(project) {
     totalChannels: parsed.totalChannels,
     status: estadoOnb || mapStatusType(statusType),
     statusType: statusType || null,
+    statusUpdatedAt,
+    statusAgeDays,
     permalink: project.permalink_url,
   };
 }
@@ -204,7 +210,14 @@ export default async function handler(req, res) {
       fetchAllPortfolioItems(PORTFOLIOS.reonboarding, token),
     ]);
 
-    const allProjects = [...setupItems, ...upgradeItems, ...reonboardingItems];
+    // Dedupe by gid: a project present in more than one portfolio would
+    // otherwise be counted twice in every KPI
+    const seen = new Set();
+    const allProjects = [...setupItems, ...upgradeItems, ...reonboardingItems].filter(p => {
+      if (seen.has(p.gid)) return false;
+      seen.add(p.gid);
+      return true;
+    });
 
     // Transform and split into active/completed
     const transformed = allProjects.map(transformProject);

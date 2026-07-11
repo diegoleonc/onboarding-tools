@@ -90,10 +90,25 @@ async function getStatusUpdatesForProject(projectGid, token) {
   return result?.data || [];
 }
 
+function makeExcerpt(text) {
+  // Strip boilerplate and markdown noise, collapse whitespace, cap at ~300 chars
+  const clean = text
+    .replace(/Actualización automática vía DIIO[^\n]*/g, '')
+    .replace(/[*_#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return clean.length > 300 ? clean.slice(0, 297) + '…' : clean;
+}
+
 function parseMetricsFromUpdates(updates) {
   const meetingDetails = [];
+  let lastSuccessOdds = null;
+  let lastSentiment = null;
 
-  for (const update of updates) {
+  // Asana doesn't guarantee ordering — sort ascending so "last" readings win
+  const ordered = [...updates].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+
+  for (const update of ordered) {
     const title = update.title || '';
     const text = update.text || '';
     const createdAt = update.created_at;
@@ -105,9 +120,23 @@ function parseMetricsFromUpdates(updates) {
       const durationMatch = text.match(/\((\d+)\s*min\)/);
       if (durationMatch) minutes = parseInt(durationMatch[1]);
 
-      meetingDetails.push({ date: createdAt, minutes });
+      meetingDetails.push({ date: createdAt, minutes, title, text });
+
+      // DIIO client-health readings embedded in the update text
+      const oddsMatch = text.match(/Predicción de éxito[^(]*\(([\d.]+)\s*\/\s*5\)/i);
+      if (oddsMatch) lastSuccessOdds = { value: parseFloat(oddsMatch[1]), date: createdAt };
+      const sentMatch = text.match(/Sentimiento[^(]*\(([\d.]+)\s*\/\s*3\)/i);
+      if (sentMatch) lastSentiment = { value: parseFloat(sentMatch[1]), date: createdAt };
     }
   }
+
+  // Keep title+excerpt only for the 5 most recent meetings (the only ones the UI
+  // renders expanded) — excerpts on ~1.100 proyectos reventarían el payload/cache
+  const excerptFrom = Math.max(0, meetingDetails.length - 5);
+  meetingDetails.forEach((m, i) => {
+    if (i >= excerptFrom) m.excerpt = makeExcerpt(m.text);
+    delete m.text;
+  });
 
   const meetings = meetingDetails.length;
   const totalMinutes = meetingDetails.reduce((sum, m) => sum + m.minutes, 0);
@@ -125,7 +154,9 @@ function parseMetricsFromUpdates(updates) {
     firstActivity: sortedDates[0] || null,
     lastActivity: lastMeeting,
     daysSinceLastMeeting,
-    meetingDetails, // Array of { date, minutes } for frontend week filtering
+    lastSuccessOdds,  // { value: x/5, date } — DIIO success prediction, latest reading
+    lastSentiment,    // { value: x/3, date } — DIIO client sentiment, latest reading
+    meetingDetails,   // Array of { date, minutes, title, excerpt? } for frontend
   };
 }
 

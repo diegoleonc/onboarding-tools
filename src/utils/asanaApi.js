@@ -18,14 +18,43 @@ export async function fetchCalibration() {
   return res.json();
 }
 
-export async function searchProjects(query) {
-  const res = await fetch(`/api/asana/search?q=${encodeURIComponent(query)}`);
+// Fija start_on/due_on del PROYECTO en Asana — sin esto la calibración futura
+// mide desde created_at y el motor se retroalimenta sesgado
+export async function updateProjectDates(projectGid, startOn, dueOn) {
+  const res = await fetch('/api/asana/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'updateProject', projectGid, startOn, dueOn }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Error buscando proyectos');
+    throw new Error(err.error || 'Error actualizando fechas del proyecto');
+  }
+  return res.json();
+}
+
+// Registra la estimación elegida al parametrizar (Redis) para medir estimado vs real
+export async function saveEstimation(payload) {
+  const res = await fetch('/api/asana/calibration', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error guardando estimación');
+  }
+  return res.json();
+}
+
+export async function fetchSnapshots() {
+  const res = await fetch('/api/snapshots');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error obteniendo snapshots');
   }
   const data = await res.json();
-  return data.projects;
+  return data.snapshots;
 }
 
 export async function createSection(projectGid, sectionName) {

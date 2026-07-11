@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Target, TrendingUp, CheckSquare, Download, AlertTriangle, Copy, CheckCircle, Send, Loader2, ExternalLink, XCircle, FolderOpen, FileText, RotateCcw } from 'lucide-react'
+import { Target, TrendingUp, CheckSquare, Download, AlertTriangle, Copy, CheckCircle, Send, Loader2, ExternalLink, XCircle, FolderOpen, FileText, RotateCcw, LineChart, ChevronDown, ChevronUp } from 'lucide-react'
 import { parseProjectName, calculateEstimation, generateTasks, formatDate, getNextMonday, DEFAULT_CALIBRATION } from '../utils/parsing'
-import { fetchPortfolioProjects, sendTasksToAsana, fetchCalibration } from '../utils/asanaApi'
+import { fetchPortfolioProjects, sendTasksToAsana, fetchCalibration, updateProjectDates, saveEstimation } from '../utils/asanaApi'
+import { PrecisionChart } from '../components/charts'
 
 const PROJECT_TYPES = [
   { value: 'setup', label: 'Set Up', tag: '01', description: 'Onboarding inicial de nuevos clientes', color: 'text-mv-green', bg: 'bg-mv-green', bgLight: 'bg-emerald-50', borderActive: 'border-mv-green' },
@@ -27,6 +28,7 @@ export default function Parametrizador() {
   const [showResults, setShowResults] = useState(false)
   const [parsed, setParsed] = useState(null)
   const [calibration, setCalibration] = useState(null)
+  const [showPrecision, setShowPrecision] = useState(false)
   const [copied, setCopied] = useState(false)
   const [sendingToAsana, setSendingToAsana] = useState(false)
   const [sendProgress, setSendProgress] = useState({ current: 0, total: 0, message: '' })
@@ -112,6 +114,30 @@ export default function Parametrizador() {
         (current, total, message) => setSendProgress({ current, total, message })
       )
       setSendResult(result)
+
+      // Feedback loop (no bloqueante): fija start_on/due_on del proyecto en Asana
+      // — sin esto la calibración futura mide desde created_at y se sesga — y
+      // registra la estimación elegida en Redis para medir estimado vs real.
+      if (result.created > 0) {
+        const lastTaskDate = tasks.reduce((max, t) => (t.date > max ? t.date : max), startDate)
+        Promise.allSettled([
+          updateProjectDates(selectedAsanaProject.gid, startDate, lastTaskDate),
+          saveEstimation({
+            projectGid: selectedAsanaProject.gid,
+            projectName: selectedAsanaProject.name,
+            estimateType,
+            days: estimations[estimateType],
+            startDate,
+            projectedEnd: lastTaskDate,
+            plan: parsed.plan,
+            type: parsed.type,
+            totalChannels: parsed.totalChannels,
+            calibrationSource: activeCalibration.source,
+          }),
+        ]).then(results => results.forEach(r => {
+          if (r.status === 'rejected') console.warn('Feedback loop parcial:', r.reason)
+        }))
+      }
     } catch (err) {
       setSendResult({ created: 0, errors: [{ task: 'General', error: err.message }] })
     } finally {
@@ -524,6 +550,66 @@ export default function Parametrizador() {
             })()}
           </div>
         </>
+      )}
+
+      {/* Precisión del modelo — control de calidad de la vara con la que se mide todo */}
+      {calibration?.trend?.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <button
+            onClick={() => setShowPrecision(v => !v)}
+            className="w-full flex items-center justify-between px-6 py-4 text-left"
+          >
+            <span className="flex items-center gap-3">
+              <LineChart size={18} className="text-slate-400" />
+              <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Precisión del modelo</span>
+              <span className="text-xs text-slate-400 hidden sm:inline">duración real vs estimada por trimestre · {calibration.sampleSize} proyectos históricos</span>
+            </span>
+            {showPrecision ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          </button>
+          {showPrecision && (() => {
+            const overall = calibration.trend.filter(t => t.segment === '(all)' && t.n >= 5).slice(-8)
+            const lastQ = overall.length ? overall[overall.length - 1].quarter : null
+            const bySegment = lastQ ? calibration.trend.filter(t => t.quarter === lastQ && t.segment !== '(all)') : []
+            return (
+              <div className="px-6 pb-6">
+                {overall.length >= 2 ? (
+                  <PrecisionChart data={overall} height={220} />
+                ) : (
+                  <p className="text-sm text-slate-400 py-4">Muestra insuficiente para la serie trimestral.</p>
+                )}
+                {bySegment.length > 0 && (
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="w-full text-xs" style={{ minWidth: 480 }}>
+                      <thead>
+                        <tr className="text-left text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                          <th className="py-2 pr-4 font-semibold">Segmento ({lastQ})</th>
+                          <th className="py-2 pr-4 font-semibold text-right">n</th>
+                          <th className="py-2 pr-4 font-semibold text-right">Real (P50)</th>
+                          <th className="py-2 pr-4 font-semibold text-right">Predicho</th>
+                          <th className="py-2 font-semibold text-right">En banda P25-P80</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bySegment.map(row => (
+                          <tr key={row.segment} className="border-b border-slate-50 text-slate-600">
+                            <td className="py-1.5 pr-4 capitalize">{row.segment}</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums">{row.n}</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums">{row.medianReal}d</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums">{row.medianPred}d</td>
+                            <td className={`py-1.5 text-right tabular-nums ${row.inBandPct < 40 ? 'text-mv-coral font-semibold' : ''}`}>{row.inBandPct}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-[11px] text-slate-400 mt-2">
+                      Si "en banda" cae sostenidamente bajo ~50%, las fórmulas necesitan recalibrarse — la operación cambió más de lo que los multiplicadores absorben.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
       )}
     </div>
   )

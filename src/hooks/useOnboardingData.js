@@ -1,19 +1,25 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { DEFAULT_CALIBRATION } from '../utils/parsing'
+import { fetchCalibration, fetchSnapshots } from '../utils/asanaApi'
 
 // Unified data layer: joins /api/projects (fast, rich attributes)
 // with /api/project-metrics (slower, DIIO effort) by project gid.
 // Projects render immediately; effort fields hydrate when ready.
+// Also exposes the calibrated estimation model and daily KPI snapshots.
 
-const P_CACHE = 'onb_projects_v2'
-const M_CACHE = 'onb_metrics_v2'
+const P_CACHE = 'onb_projects_v3' // v3: statusAgeDays, sentiment/odds, excerpts
+const M_CACHE = 'onb_metrics_v3'
+const C_CACHE = 'onb_calibration_v1'
+const S_CACHE = 'onb_snapshots_v1'
 const TTL = 5 * 60 * 1000
+const SLOW_TTL = 60 * 60 * 1000 // calibración/snapshots: cambian a lo sumo 1 vez al día
 
-function readCache(key) {
+function readCache(key, ttl = TTL) {
   try {
     const raw = sessionStorage.getItem(key)
     if (!raw) return null
     const c = JSON.parse(raw)
-    if (Date.now() - c.t > TTL) { sessionStorage.removeItem(key); return null }
+    if (Date.now() - c.t > ttl) { sessionStorage.removeItem(key); return null }
     return c.d
   } catch { return null }
 }
@@ -28,6 +34,24 @@ export function useOnboardingData() {
   const [loading, setLoading] = useState(!readCache(P_CACHE))
   const [metricsLoading, setMetricsLoading] = useState(!readCache(M_CACHE))
   const [error, setError] = useState(null)
+  const [liveCalibration, setLiveCalibration] = useState(() => readCache(C_CACHE, SLOW_TTL))
+  const [snapshots, setSnapshots] = useState(() => readCache(S_CACHE, SLOW_TTL) || [])
+
+  // Modelo calibrado (compartido por Resumen/Proyectos); fallback estático si falla
+  useEffect(() => {
+    if (readCache(C_CACHE, SLOW_TTL)) return
+    fetchCalibration()
+      .then(c => { setLiveCalibration(c); writeCache(C_CACHE, c) })
+      .catch(() => setLiveCalibration(null))
+  }, [])
+
+  // Serie de snapshots diarios (deltas "vs hace un mes"); opcional, no bloquea
+  useEffect(() => {
+    if (readCache(S_CACHE, SLOW_TTL)) return
+    fetchSnapshots()
+      .then(s => { setSnapshots(s || []); writeCache(S_CACHE, s || []) })
+      .catch(() => setSnapshots([]))
+  }, [])
 
   const fetchProjects = useCallback(async (force = false) => {
     if (!force) {
@@ -92,6 +116,8 @@ export function useOnboardingData() {
         daysSinceLastMeeting: m?.daysSinceLastMeeting ?? null,
         firstActivity: m?.firstActivity ?? null,
         lastActivity: m?.lastActivity ?? null,
+        lastSuccessOdds: m?.lastSuccessOdds ?? null,
+        lastSentiment: m?.lastSentiment ?? null,
         meetingDetails: m?.meetingDetails ?? [],
       }
     }
@@ -107,6 +133,10 @@ export function useOnboardingData() {
     all: useMemo(() => [...joined.active, ...joined.completed], [joined]),
     meta: projectsData?.meta || null,
     hasMetrics: !!metricsData,
+    // calibración activa: la live si llegó, si no las fórmulas estáticas (mismos valores)
+    calibration: liveCalibration?.segments ? liveCalibration : DEFAULT_CALIBRATION,
+    calibrationLive: !!liveCalibration?.segments && liveCalibration.source === 'live',
+    snapshots,
     loading,
     metricsLoading,
     error,

@@ -34,21 +34,28 @@ export function PageHeader({ title, subtitle, children }) {
 }
 
 // ============ stat tile ============
-export function StatTile({ label, value, sub, delta, deltaGood, tone }) {
+export function StatTile({ label, value, sub, delta, deltaGood, deltaNeutral, tone, onClick }) {
   const toneColor = tone === 'bad' ? STATUS.off_track.color : tone === 'warn' ? STATUS.at_risk.color : tone === 'good' ? STATUS.on_track.color : INK.primary
+  // deltaNeutral: informativo, sin juicio de valor (p.ej. más horas de reunión no es
+  // inequívocamente bueno ni malo)
+  const deltaColor = deltaNeutral ? INK.muted : deltaGood ? STATUS.on_track.color : STATUS.off_track.color
+  const Tag = onClick ? 'button' : 'div'
   return (
-    <div className="bg-white rounded-2xl border border-[#E4E8F1] shadow-[0_1px_2px_rgba(31,42,68,0.04)] px-5 py-4 min-w-0">
+    <Tag
+      onClick={onClick}
+      className={`bg-white rounded-2xl border border-[#E4E8F1] shadow-[0_1px_2px_rgba(31,42,68,0.04)] px-5 py-4 min-w-0 text-left ${onClick ? 'cursor-pointer hover:border-[#6681C6]/50 hover:shadow-md transition-all' : ''}`}
+    >
       <p className="text-xs font-medium truncate" style={{ color: INK.muted }}>{label}</p>
       <div className="flex items-baseline gap-2 mt-1.5 min-w-0">
         <span className={`leading-none font-semibold whitespace-nowrap ${String(value).length > 5 ? 'text-[22px]' : 'text-[28px]'}`} style={{ color: toneColor }}>{value}</span>
         {delta !== undefined && delta !== null && (
-          <span className="text-xs font-semibold whitespace-nowrap" style={{ color: deltaGood ? STATUS.on_track.color : STATUS.off_track.color }}>
+          <span className="text-xs font-semibold whitespace-nowrap" style={{ color: deltaColor }}>
             {delta > 0 ? '+' : ''}{delta}
           </span>
         )}
       </div>
       {sub && <p className="text-[11px] mt-1.5 truncate" style={{ color: INK.faint }}>{sub}</p>}
-    </div>
+    </Tag>
   )
 }
 
@@ -81,6 +88,9 @@ export function Chip({ children, kind = 'neutral' }) {
     meeting: { bg: '#E8EDF7', color: '#35558F' },
     due: { bg: STATUS.off_track.bg, color: STATUS.off_track.text },
     age: { bg: '#F1F4F9', color: '#64748B' },
+    stale: { bg: '#F1F4F9', color: '#475569' },      // semáforo sin actualizar
+    client: { bg: '#F8EAF4', color: '#933D7B' },     // voz del cliente (DIIO)
+    plan: { bg: '#FBF0DF', color: '#A05E08' },       // sobre plan calibrado
   }
   const k = kinds[kind] || kinds.neutral
   return (
