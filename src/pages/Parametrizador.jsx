@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Target, TrendingUp, CheckSquare, Download, AlertTriangle, Copy, CheckCircle, Send, Loader2, ExternalLink, XCircle, FolderOpen, FileText, RotateCcw } from 'lucide-react'
-import { parseProjectName, calculateEstimation, generateTasks, formatDate, getNextMonday } from '../utils/parsing'
-import { fetchPortfolioProjects, sendTasksToAsana } from '../utils/asanaApi'
+import { parseProjectName, calculateEstimation, generateTasks, formatDate, getNextMonday, DEFAULT_CALIBRATION } from '../utils/parsing'
+import { fetchPortfolioProjects, sendTasksToAsana, fetchCalibration } from '../utils/asanaApi'
 
 const PROJECT_TYPES = [
   { value: 'setup', label: 'Set Up', tag: '01', description: 'Onboarding inicial de nuevos clientes', color: 'text-mv-green', bg: 'bg-mv-green', bgLight: 'bg-emerald-50', borderActive: 'border-mv-green' },
@@ -10,8 +10,8 @@ const PROJECT_TYPES = [
 ]
 
 const ESTIMATE_OPTIONS = [
-  { value: 'optimista', label: 'Optimista', sublabel: 'P50', color: 'text-mv-green', iconBg: 'bg-emerald-50', iconColor: 'text-mv-green' },
-  { value: 'esperado', label: 'Esperado', sublabel: 'Recomendado', color: 'text-mv-blue', iconBg: 'bg-blue-50', iconColor: 'text-mv-blue' },
+  { value: 'optimista', label: 'Optimista', sublabel: 'P25', color: 'text-mv-green', iconBg: 'bg-emerald-50', iconColor: 'text-mv-green' },
+  { value: 'esperado', label: 'Esperado', sublabel: 'Mediana', color: 'text-mv-blue', iconBg: 'bg-blue-50', iconColor: 'text-mv-blue' },
   { value: 'conservador', label: 'Conservador', sublabel: 'P80', color: 'text-mv-coral', iconBg: 'bg-red-50', iconColor: 'text-mv-coral' },
 ]
 
@@ -26,11 +26,24 @@ export default function Parametrizador() {
   const [estimateType, setEstimateType] = useState('esperado')
   const [showResults, setShowResults] = useState(false)
   const [parsed, setParsed] = useState(null)
-  const [estimations, setEstimations] = useState(null)
+  const [calibration, setCalibration] = useState(null)
   const [copied, setCopied] = useState(false)
   const [sendingToAsana, setSendingToAsana] = useState(false)
   const [sendProgress, setSendProgress] = useState({ current: 0, total: 0, message: '' })
   const [sendResult, setSendResult] = useState(null)
+
+  // Calibración dinámica: coeficientes calculados desde el histórico real de Asana.
+  // Si el endpoint falla, se usan las fórmulas estáticas (mismos valores calibrados).
+  useEffect(() => {
+    fetchCalibration().then(setCalibration).catch(() => setCalibration(null))
+  }, [])
+
+  const activeCalibration = calibration?.segments ? calibration : DEFAULT_CALIBRATION
+
+  const estimations = useMemo(() => {
+    if (!parsed) return null
+    return calculateEstimation(parsed.plan, parsed.type, parsed.totalChannels, parsed.channels, activeCalibration)
+  }, [parsed, activeCalibration])
 
   const tasks = useMemo(() => {
     if (!parsed || !estimations) return []
@@ -45,7 +58,6 @@ export default function Parametrizador() {
     setSelectedAsanaProject(null)
     setShowResults(false)
     setParsed(null)
-    setEstimations(null)
     setSendResult(null)
 
     fetchPortfolioProjects(selectedType)
@@ -60,10 +72,7 @@ export default function Parametrizador() {
   const handleSelectProject = (project) => {
     setSelectedAsanaProject(project)
     setSendResult(null)
-    const p = parseProjectName(project.name)
-    const e = calculateEstimation(p.plan, p.type, p.totalChannels, p.channels)
-    setParsed(p)
-    setEstimations(e)
+    setParsed(parseProjectName(project.name))
     setShowResults(true)
   }
 
@@ -115,7 +124,6 @@ export default function Parametrizador() {
     setSelectedAsanaProject(null)
     setShowResults(false)
     setParsed(null)
-    setEstimations(null)
     setSendResult(null)
     setPortfolioProjects([])
   }
@@ -315,6 +323,19 @@ export default function Parametrizador() {
               <div className="flex items-center gap-3 mb-5">
                 <TrendingUp size={18} className="text-slate-400" />
                 <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Estimación y fecha de inicio</h2>
+                <div className="ml-auto">
+                  {calibration?.source === 'live' ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-mv-green" title={`Coeficientes recalculados desde Asana · ${new Date(calibration.generatedAt).toLocaleDateString('es-CL')}`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-mv-green" />
+                      Calibrado con {calibration.sampleSize} proyectos reales
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-50 border border-slate-200 text-xs font-medium text-slate-400" title="Fórmulas estáticas calibradas con 1.083 proyectos históricos (jul 2026)">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                      Calibración estática
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 {ESTIMATE_OPTIONS.map(opt => (
@@ -497,7 +518,10 @@ export default function Parametrizador() {
 
           {/* Formula reference */}
           <div className="text-xs text-slate-300 text-center py-2">
-            Starter: 59+5×ch | Pro: 56+12×ch | Advanced: 48+18×ch | Enterprise: 80+10×ch | Upgrade: 14+3×ch · Complejas: +16d
+            {(() => {
+              const s = activeCalibration.segments
+              return `Starter: ${s.starter.base}+${s.starter.perChannel}×ch | Pro: ${s.pro.base}+${s.pro.perChannel}×ch | Advanced: ${s.advanced.base}+${s.advanced.perChannel}×ch | Enterprise: ${s.enterprise.base}+${s.enterprise.perChannel}×ch | Upgrade: ${s.upgrade.base}+${s.upgrade.perChannel}×ch | Reonb: ${s.reonboarding.base}+${s.reonboarding.perChannel}×ch · Complejas: +${activeCalibration.complexExtraDays}d (no Upgrade)`
+            })()}
           </div>
         </>
       )}
