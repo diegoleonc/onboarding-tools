@@ -1,0 +1,155 @@
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { STATUS, GRID, INK, CAT, SURFACE } from '../theme'
+
+const AXIS_TICK = { fontSize: 11, fontFamily: 'Poppins', fill: INK.muted }
+
+// ---------- shared tooltip shell ----------
+export function TooltipShell({ title, rows, footer }) {
+  return (
+    <div style={{
+      background: 'white', borderRadius: 12, padding: '12px 16px',
+      boxShadow: '0 8px 30px rgba(31,42,68,0.14)', border: `1px solid ${GRID}`,
+      minWidth: 180, fontFamily: 'Poppins, sans-serif',
+    }}>
+      {title && <p style={{ fontWeight: 600, fontSize: 12, color: INK.primary, marginBottom: 8 }}>{title}</p>}
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 4 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: INK.secondary }}>
+            {r.color && <span style={{ width: 8, height: 8, borderRadius: 4, background: r.color, display: 'inline-block' }} />}
+            {r.label}
+          </span>
+          <span style={{ fontWeight: 600, fontSize: 12, color: INK.primary, fontVariantNumeric: 'tabular-nums' }}>{r.value}</span>
+        </div>
+      ))}
+      {footer && (
+        <div style={{ borderTop: `1px solid ${GRID}`, paddingTop: 6, marginTop: 6, fontSize: 11, color: INK.muted }}>
+          {footer}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------- weekly coverage (stacked: con reunión context, sin reunión emphasis) ----------
+const COV = { con: '#9FB4DC', sin: STATUS.off_track.color }
+
+export function CoverageChart({ data, height = 260 }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ left: -18, right: 8, top: 8, bottom: 0 }} barCategoryGap="28%">
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="semana" tick={AXIS_TICK} axisLine={{ stroke: GRID }} tickLine={false} />
+        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip
+          cursor={{ fill: 'rgba(31,42,68,0.04)' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0]?.payload
+            if (!d) return null
+            return (
+              <TooltipShell
+                title={d.fullLabel}
+                rows={[
+                  { label: 'Con reunión', value: d.conReunion, color: COV.con },
+                  { label: 'Sin reunión', value: d.sinReunion, color: COV.sin },
+                  { label: 'Total activos', value: d.total },
+                ]}
+                footer={`${d.pct}% de cobertura`}
+              />
+            )
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 12, fontFamily: 'Poppins', color: INK.secondary }}
+          iconType="circle" iconSize={8}
+          formatter={v => <span style={{ color: INK.secondary, fontSize: 12 }}>{v === 'conReunion' ? 'Con reunión' : 'Sin reunión'}</span>}
+        />
+        <Bar dataKey="conReunion" stackId="a" fill={COV.con} maxBarSize={22} stroke={SURFACE} strokeWidth={1} />
+        <Bar dataKey="sinReunion" stackId="a" fill={COV.sin} maxBarSize={22} radius={[4, 4, 0, 0]} stroke={SURFACE} strokeWidth={1} />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ---------- pipeline by type, segmented by status ----------
+const PIPE_KEYS = [
+  ['on_track', STATUS.on_track],
+  ['at_risk', STATUS.at_risk],
+  ['off_track', STATUS.off_track],
+  ['on_hold', STATUS.on_hold],
+  ['none', STATUS.none],
+]
+
+export function PipelineChart({ data, height = 200 }) {
+  return (
+    <div>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24, top: 0, bottom: 0 }} barCategoryGap="30%">
+        <CartesianGrid stroke={GRID} horizontal={false} />
+        <XAxis type="number" tick={AXIS_TICK} axisLine={{ stroke: GRID }} tickLine={false} allowDecimals={false} />
+        <YAxis dataKey="tipo" type="category" tick={{ ...AXIS_TICK, fontSize: 12, fill: INK.secondary }} width={100} axisLine={false} tickLine={false} />
+        <Tooltip
+          cursor={{ fill: 'rgba(31,42,68,0.04)' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0]?.payload
+            if (!d) return null
+            return (
+              <TooltipShell
+                title={`${d.tipo} — ${d.total} activos`}
+                rows={PIPE_KEYS.filter(([k]) => d[k] > 0).map(([k, s]) => ({ label: s.label, value: d[k], color: s.color }))}
+              />
+            )
+          }}
+        />
+        {PIPE_KEYS.map(([key, s], i) => (
+          <Bar key={key} dataKey={key} stackId="a" fill={s.color} maxBarSize={20}
+            stroke={SURFACE} strokeWidth={1}
+            radius={i === PIPE_KEYS.length - 1 ? [0, 4, 4, 0] : 0} />
+        ))}
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-2">
+        {PIPE_KEYS.map(([k, s]) => (
+          <span key={k} className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: INK.secondary }}>
+            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: s.color }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------- monthly closes (single series, slot-1 hue) ----------
+export function ClosesChart({ data, height = 200 }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ left: -22, right: 8, top: 18, bottom: 0 }} barCategoryGap="35%">
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: GRID }} tickLine={false} />
+        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip
+          cursor={{ fill: 'rgba(31,42,68,0.04)' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0]?.payload
+            return <TooltipShell rows={[{ label: d.label, value: `${d.count} cierres`, color: CAT[0] }]} />
+          }}
+        />
+        <Bar dataKey="count" fill={CAT[0]} maxBarSize={22} radius={[4, 4, 0, 0]}
+          label={{ position: 'top', fontSize: 11, fontFamily: 'Poppins', fill: INK.muted }} />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ---------- horizontal load bar (single hue, labeled rows) ----------
+export function LoadBar({ value, max, color = CAT[0] }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
+  return (
+    <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: '#EDF1F7' }}>
+      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+    </div>
+  )
+}
