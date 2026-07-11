@@ -163,7 +163,7 @@ export default function Esfuerzo() {
 
   if (!data) return null
 
-  const { projects: rawProjects, meta } = data
+  const { projects: rawProjects } = data
 
   // Apply week filter to meeting data (client-side, no extra API call)
   const selectedWeek = weekOptions.find(w => w.value === weekFilter)

@@ -1,8 +1,9 @@
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
-import { LayoutDashboard, Clock } from 'lucide-react'
+import { LayoutDashboard, Clock, SlidersHorizontal } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Esfuerzo from './pages/Esfuerzo'
 import WebhookLogs from './pages/WebhookLogs'
+import Parametrizador from './pages/Parametrizador'
 
 function App() {
   return (
@@ -53,6 +54,19 @@ function App() {
                 <span className="hidden sm:inline">Esfuerzo</span>
               </NavLink>
               <NavLink
+                to="/parametrizador"
+                className={({ isActive }) =>
+                  `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    isActive
+                      ? 'bg-white/20 text-white shadow-sm backdrop-blur-sm'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`
+                }
+              >
+                <SlidersHorizontal size={18} />
+                <span className="hidden sm:inline">Parametrizador</span>
+              </NavLink>
+              <NavLink
                 to="/webhooks"
                 className={({ isActive }) =>
                   `flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -76,6 +90,7 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/esfuerzo" element={<Esfuerzo />} />
+          <Route path="/parametrizador" element={<Parametrizador />} />
           <Route path="/webhooks" element={<WebhookLogs />} />
         </Routes>
       </main>

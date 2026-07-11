@@ -1,6 +1,21 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Oswald:wght@400;500;600;700&display=swap');
 
+/* Multivende brand palette as Tailwind utilities (text-mv-*, bg-mv-*, border-mv-*) */
+@theme {
+  --color-mv-navy: #2B4063;
+  --color-mv-blue: #6681C6;
+  --color-mv-green: #54CC85;
+  --color-mv-magenta: #D95FB6;
+  --color-mv-coral: #F05B54;
+  --color-mv-yellow: #F8D63C;
+  --color-mv-orange: #FC9B27;
+  --color-mv-navy-light: #3d5a87;
+  --color-mv-navy-dark: #1e2d47;
+  --color-mv-blue-light: #8da0d4;
+  --color-mv-green-light: #7ddba3;
+}
+
 @layer base {
   body {
     font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -51,4 +66,21 @@
 .card-hover:hover {
   box-shadow: 0 4px 20px rgba(43, 64, 99, 0.08);
   transform: translateY(-1px);
+}
+
+/* Entry animations (used by Parametrizador) */
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-up {
+  animation: slideUp 0.4s ease-out;
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
 }
