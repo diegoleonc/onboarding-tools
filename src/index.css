@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Oswald:wght@400;500;600;700&display=swap');
 
-/* Multivende brand palette as Tailwind utilities (text-mv-*, bg-mv-*, border-mv-*) */
+/* Multivende brand palette as Tailwind utilities (text-mv-*, bg-mv-*, border-mv-*) — used by Parametrizador */
 @theme {
   --color-mv-navy: #2B4063;
   --color-mv-blue: #6681C6;
@@ -19,23 +19,19 @@
 @layer base {
   body {
     font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    @apply bg-slate-50 text-slate-800 antialiased;
-  }
-
-  h1, h2, h3 {
-    font-family: 'Poppins', system-ui, sans-serif;
+    @apply text-slate-800 antialiased;
+    background-color: #F3F5FA;
   }
 }
 
-/* Multivende Brand Colors as CSS variables */
+/* Multivende brand tokens */
 :root {
   --mv-navy: #2B4063;
   --mv-blue: #6681C6;
-  --mv-green: #54CC85;
-  --mv-pink: #D95FB6;
-  --mv-red: #F05B54;
-  --mv-yellow: #F8D63C;
-  --mv-orange: #FC9B27;
+  --mv-green: #3FBF73;
+  --mv-red: #EE4941;
+  --mv-canvas: #F3F5FA;
+  --mv-border: #E4E8F1;
 }
 
 /* Custom scrollbar */
@@ -44,7 +40,7 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
@@ -54,18 +50,21 @@
   background: #94a3b8;
 }
 
-/* Brand gradient for nav and hero sections */
+/* Sidebar / mobile header gradient */
+.sidebar-gradient {
+  background: linear-gradient(180deg, #22355A 0%, #2B4063 60%, #31497A 100%);
+}
+
+/* Legacy alias kept for WebhookLogs page */
 .brand-gradient {
   background: linear-gradient(135deg, #2B4063 0%, #3d5a87 50%, #6681C6 100%);
 }
 
-/* Subtle card hover */
 .card-hover {
   transition: all 0.2s ease;
 }
 .card-hover:hover {
   box-shadow: 0 4px 20px rgba(43, 64, 99, 0.08);
-  transform: translateY(-1px);
 }
 
 /* Entry animations (used by Parametrizador) */
