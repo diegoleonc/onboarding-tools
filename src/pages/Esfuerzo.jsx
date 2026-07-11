@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { RefreshCw, Video } from 'lucide-react'
 import { useOnboardingData } from '../hooks/useOnboardingData'
 import { statusOf, INK, BRAND, heatColor } from '../theme'
@@ -12,9 +13,22 @@ const N_WEEKS = 8
 
 export default function Esfuerzo() {
   const { active, completed, hasMetrics, loading, metricsLoading, error, refresh } = useOnboardingData()
-  const [ownerFilter, setOwnerFilter] = useState('')
-  const [search, setSearch] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [order, setOrder] = useState('neglect')
+
+  // Filtros en la URL: una vista filtrada se puede pegar como link en Slack
+  const ownerFilter = searchParams.get('owner') || ''
+  const search = searchParams.get('q') || ''
+  const setParam = (key, value) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value)
+      else next.delete(key)
+      return next
+    }, { replace: true })
+  }
+  const setOwnerFilter = (v) => setParam('owner', v)
+  const setSearch = (v) => setParam('q', v)
 
   const weeks = useMemo(() => lastNWeeks(N_WEEKS), [])
   const owners = useMemo(() => [...new Set(active.map(p => p.owner).filter(Boolean))].sort(), [active])
@@ -23,7 +37,10 @@ export default function Esfuerzo() {
     const s = search.toLowerCase()
     const pool = active.filter(p => {
       if (ownerFilter && p.owner !== ownerFilter) return false
-      if (s && !p.name.toLowerCase().includes(s)) return false
+      if (s) {
+        const haystack = `${p.name} ${p.company || ''} ${p.owner || ''} ${(p.channels || []).join(' ')}`.toLowerCase()
+        if (!haystack.includes(s)) return false
+      }
       return true
     })
     const built = pool.map(p => {
@@ -90,7 +107,7 @@ export default function Esfuerzo() {
 
   return (
     <div>
-      <PageHeader title="Esfuerzo" subtitle={`Tiempo efectivo por proyecto según reuniones DIIO · semana actual: ${kpis.weekLabel}`}>
+      <PageHeader title="Esfuerzo" subtitle={`Tiempo efectivo por proyecto según reuniones DIIO · semana en curso (parcial): ${kpis.weekLabel}`}>
         <HydratingNote show={metricsLoading} />
         <button
           onClick={refresh}
@@ -107,7 +124,7 @@ export default function Esfuerzo() {
         <StatTile
           label="Cobertura esta semana"
           value={`${kpis.coverage}%`}
-          sub={`${kpis.covered} de ${kpis.coverable} activos con reunión`}
+          sub={`${kpis.covered} de ${kpis.coverable} con reunión · semana parcial`}
           tone={kpis.coverage >= 60 ? 'good' : kpis.coverage >= 40 ? 'warn' : 'bad'}
         />
         <StatTile

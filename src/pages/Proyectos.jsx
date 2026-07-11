@@ -1,27 +1,65 @@
 import { useMemo, useState, Fragment } from 'react'
-import { RefreshCw, ArrowUpDown, ChevronRight, Video, CalendarDays } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { RefreshCw, ArrowUpDown, ChevronRight, Video, CalendarDays, Download } from 'lucide-react'
 import { useOnboardingData } from '../hooks/useOnboardingData'
 import { statusOf, INK, BRAND, STATUS } from '../theme'
-import { slaReference, slaRisk, formatHours, daysSinceLabel, fmtShort } from '../utils/insights'
+import { slaReference, slaRisk, formatHours, daysSinceLabel, fmtShort, calibratedAssessment, OUTLOOK_BUCKETS } from '../utils/insights'
+import { downloadCSV } from '../utils/csv'
 import {
   Card, PageHeader, StatusBadge, TipoBadge, Segmented, FilterSelect,
   SearchInput, AsanaLink, LoadingState, ErrorState, EmptyState, HydratingNote,
 } from '../components/ui'
 
 const SLA_TONE = {
-  alto: { color: '#A02722', bg: '#FCE9E8', label: 'SLA alto' },
-  medio: { color: '#92550A', bg: '#FCF0DE', label: 'SLA medio' },
-  bajo: { color: '#166B3D', bg: '#E5F5EC', label: 'En plazo' },
+  alto: { color: '#A02722', bg: '#FCE9E8' },
+  medio: { color: '#92550A', bg: '#FCF0DE' },
 }
 
+const PLAN_TONE = {
+  onPlan: { color: '#166B3D', bg: '#E5F5EC', label: 'En plazo' },
+  near: { color: '#92550A', bg: '#FCF0DE', label: 'Por vencer' },
+  over: { color: '#92550A', bg: '#FCF0DE', label: 'Sobre plan' },
+  overP80: { color: '#A02722', bg: '#FCE9E8', label: 'Sobre P80' },
+}
+
+// bucket virtual: el KPI "riesgo" del Resumen suma at_risk + off_track — el filtro
+// debe expandirlo igual o el conteo clickeado no coincide con la lista
+const STATUS_OPTIONS = [
+  { value: 'risk', label: 'Riesgo o atraso' },
+  ...Object.entries(STATUS)
+    .filter(([k]) => k !== 'complete' && k !== 'none')
+    .map(([value, s]) => ({ value, label: s.label })),
+]
+
 export default function Proyectos() {
-  const { active, completed, hasMetrics, loading, metricsLoading, error, refresh } = useOnboardingData()
-  const [scope, setScope] = useState('active')
-  const [filters, setFilters] = useState({ type: '', status: '', owner: '', country: '', plan: '' })
-  const [search, setSearch] = useState('')
+  const { active, completed, hasMetrics, calibration, loading, metricsLoading, error, refresh } = useOnboardingData()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [sortField, setSortField] = useState('days')
   const [sortDir, setSortDir] = useState('desc')
-  const [expanded, setExpanded] = useState(null)
+  const [expanded, setExpanded] = useState(() => searchParams.get('gid'))
+
+  // Filtros en la URL: cada vista filtrada es un permalink pegable en Slack
+  const scope = searchParams.get('scope') || 'active'
+  const filters = useMemo(() => ({
+    type: searchParams.get('type') || '',
+    status: searchParams.get('status') || '',
+    owner: searchParams.get('owner') || '',
+    country: searchParams.get('country') || '',
+    plan: searchParams.get('plan') || '',
+  }), [searchParams])
+  const search = searchParams.get('q') || ''
+  const neglectedOnly = searchParams.get('neglected') === '1'
+  const outlookFilter = searchParams.get('outlook') || ''
+
+  const setParam = (key, value) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value)
+      else next.delete(key)
+      next.delete('gid')
+      return next
+    }, { replace: true })
+  }
 
   const ref = useMemo(() => slaReference(completed), [completed])
 
@@ -29,6 +67,15 @@ export default function Proyectos() {
     () => (scope === 'active' ? active : scope === 'completed' ? completed : [...active, ...completed]),
     [scope, active, completed]
   )
+
+  // Evaluación calibrada por proyecto (días hábiles vs plan por segmento+canales)
+  const assessments = useMemo(() => {
+    const map = new Map()
+    for (const p of pool) {
+      if (!p.completed) map.set(p.gid, calibratedAssessment(p, calibration))
+    }
+    return map
+  }, [pool, calibration])
 
   const owners = useMemo(() => [...new Set([...active, ...completed].map(p => p.owner).filter(Boolean))].sort(), [active, completed])
   const countries = useMemo(() => [...new Set([...active, ...completed].map(p => p.country).filter(Boolean))].sort(), [active, completed])
@@ -38,14 +85,29 @@ export default function Proyectos() {
     const s = search.toLowerCase()
     return pool.filter(p => {
       if (filters.type && p.type !== filters.type) return false
-      if (filters.status && statusOf(p) !== filters.status) return false
+      const st = statusOf(p)
+      if (filters.status === 'risk') {
+        if (!['at_risk', 'off_track'].includes(st)) return false
+      } else if (filters.status && st !== filters.status) return false
       if (filters.owner && p.owner !== filters.owner) return false
       if (filters.country && p.country !== filters.country) return false
       if (filters.plan && p.plan !== filters.plan) return false
-      if (s && !p.name.toLowerCase().includes(s)) return false
+      if (neglectedOnly) {
+        if (p.completed || st === 'on_hold') return false
+        if (!(p.daysSinceLastMeeting === null || p.daysSinceLastMeeting > 7)) return false
+      }
+      if (outlookFilter) {
+        if (assessments.get(p.gid)?.bucket !== outlookFilter) return false
+      }
+      // el COO piensa en clientes, personas y marketplaces — no en el string
+      // exacto del nombre del proyecto Asana
+      if (s) {
+        const haystack = `${p.name} ${p.company || ''} ${p.owner || ''} ${(p.channels || []).join(' ')}`.toLowerCase()
+        if (!haystack.includes(s)) return false
+      }
       return true
     })
-  }, [pool, filters, search])
+  }, [pool, filters, search, neglectedOnly, outlookFilter, assessments])
 
   const sorted = useMemo(() => {
     const strFields = ['name', 'owner', 'country', 'type', 'plan']
@@ -64,6 +126,23 @@ export default function Proyectos() {
     else { setSortField(field); setSortDir('desc') }
   }
 
+  const handleExportCSV = () => {
+    downloadCSV(
+      `proyectos-onboarding-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Empresa', 'Tipo', 'Plan', 'País', 'Canales', 'Estado', 'Implementadora', 'Días', 'Término proyectado', 'Reuniones', 'Horas DIIO', 'Última reunión (días)', 'Asana'],
+      sorted.map(p => {
+        const a = assessments.get(p.gid)
+        return [
+          p.company || p.name, p.type, p.plan, p.country, (p.channels || []).join(' / '),
+          p.completed ? 'Completado' : (STATUS[statusOf(p)]?.label || ''), p.owner,
+          p.days ?? '', a ? fmtShort(a.projectedEnd) : '',
+          p.hasMetrics ? p.meetings : '', p.hasMetrics ? p.totalHours : '',
+          p.daysSinceLastMeeting ?? '', p.permalink,
+        ]
+      })
+    )
+  }
+
   if (loading && pool.length === 0) return <LoadingState message="Cargando proyectos..." />
   if (error && pool.length === 0) return <ErrorState error={error} onRetry={refresh} />
 
@@ -73,6 +152,15 @@ export default function Proyectos() {
     <div>
       <PageHeader title="Proyectos" subtitle={`${active.length} activos · ${completed.length} completados`}>
         <HydratingNote show={metricsLoading} />
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-[#E4E8F1] rounded-lg text-[13px] font-medium hover:bg-[#F7F9FC] transition-colors shadow-sm"
+          style={{ color: BRAND.navy }}
+          title="Exportar la tabla filtrada a CSV"
+        >
+          <Download size={14} />
+          CSV
+        </button>
         <button
           onClick={refresh}
           disabled={loading}
@@ -86,18 +174,24 @@ export default function Proyectos() {
 
       {/* single filter row */}
       <div className="flex items-center gap-2 flex-wrap mb-4">
-        <Segmented value={scope} onChange={setScope} options={[['active', 'Activos'], ['completed', 'Completados'], ['all', 'Todos']]} />
-        <FilterSelect value={filters.type} onChange={v => setFilters({ ...filters, type: v })} options={['Setup', 'Upgrade', 'Reonboarding']} placeholder="Tipo" />
+        <Segmented value={scope} onChange={v => setParam('scope', v === 'active' ? '' : v)} options={[['active', 'Activos'], ['completed', 'Completados'], ['all', 'Todos']]} />
+        <FilterSelect value={filters.type} onChange={v => setParam('type', v)} options={['Setup', 'Upgrade', 'Reonboarding']} placeholder="Tipo" />
+        <FilterSelect value={filters.status} onChange={v => setParam('status', v)} options={STATUS_OPTIONS} placeholder="Estado" />
+        <FilterSelect value={filters.owner} onChange={v => setParam('owner', v)} options={owners} placeholder="Implementador" />
+        <FilterSelect value={filters.country} onChange={v => setParam('country', v)} options={countries} placeholder="País" />
+        <FilterSelect value={filters.plan} onChange={v => setParam('plan', v)} options={plans} placeholder="Plan" />
         <FilterSelect
-          value={filters.status}
-          onChange={v => setFilters({ ...filters, status: v })}
-          options={Object.entries(STATUS).filter(([k]) => k !== 'complete' && k !== 'none').map(([value, s]) => ({ value, label: s.label }))}
-          placeholder="Estado"
+          value={outlookFilter}
+          onChange={v => setParam('outlook', v)}
+          options={Object.entries(OUTLOOK_BUCKETS).map(([value, b]) => ({ value, label: b.label }))}
+          placeholder="Vs plan"
         />
-        <FilterSelect value={filters.owner} onChange={v => setFilters({ ...filters, owner: v })} options={owners} placeholder="Implementador" />
-        <FilterSelect value={filters.country} onChange={v => setFilters({ ...filters, country: v })} options={countries} placeholder="País" />
-        <FilterSelect value={filters.plan} onChange={v => setFilters({ ...filters, plan: v })} options={plans} placeholder="Plan" />
-        <div className="flex-1 min-w-[180px] max-w-xs"><SearchInput value={search} onChange={setSearch} placeholder="Buscar proyecto..." /></div>
+        <div className="flex-1 min-w-[180px] max-w-xs"><SearchInput value={search} onChange={v => setParam('q', v)} placeholder="Empresa, implementadora, canal..." /></div>
+        {neglectedOnly && (
+          <button onClick={() => setParam('neglected', '')} className="text-[11px] font-medium px-2 py-1 rounded-md hover:opacity-70" style={{ backgroundColor: '#FCF0DE', color: '#92550A' }}>
+            Sin reunión +7d ✕
+          </button>
+        )}
         <span className="text-xs ml-auto" style={{ color: INK.faint }}>{sorted.length} resultado{sorted.length !== 1 ? 's' : ''}</span>
       </div>
 
@@ -112,6 +206,7 @@ export default function Proyectos() {
                 <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: INK.muted }}>Estado</th>
                 <Th {...thProps} field="owner">Implementador</Th>
                 <Th {...thProps} field="days" align="right">Días</Th>
+                <th className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: INK.muted }}>Término proy.</th>
                 <Th {...thProps} field="meetings" align="right">Reuniones</Th>
                 <Th {...thProps} field="totalHours" align="right">Horas</Th>
                 <Th {...thProps} field="daysSinceLastMeeting" align="right">Última reunión</Th>
@@ -121,7 +216,8 @@ export default function Proyectos() {
             <tbody>
               {sorted.map(p => {
                 const st = statusOf(p)
-                const risk = !p.completed ? slaRisk(p, ref) : null
+                const a = assessments.get(p.gid)
+                const risk = !p.completed && !a ? slaRisk(p, ref) : null
                 const isOpen = expanded === p.gid
                 return (
                   <Fragment key={p.gid}>
@@ -143,10 +239,28 @@ export default function Proyectos() {
                       <td className="px-3 py-3 text-[13px] whitespace-nowrap" style={{ color: INK.secondary }}>{p.owner || '—'}</td>
                       <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
                         <span style={{ color: INK.primary, fontWeight: 500 }}>{p.days ?? '—'}</span>
+                        {a && a.bucket !== 'onPlan' && a.bucket !== 'near' && (
+                          <span
+                            className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                            style={{ backgroundColor: PLAN_TONE[a.bucket].bg, color: PLAN_TONE[a.bucket].color }}
+                            title={`${a.elapsed}d hábiles vs ${a.expected}d esperados (P80: ${a.conservador}d)`}
+                          >
+                            +{a.overPct}%
+                          </span>
+                        )}
                         {risk && risk !== 'bajo' && (
                           <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: SLA_TONE[risk].bg, color: SLA_TONE[risk].color }}>
                             {risk === 'alto' ? '>P80' : '>P50'}
                           </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap tabular-nums text-[12px]">
+                        {a ? (
+                          <span style={{ color: PLAN_TONE[a.bucket].color }} title={`Plan calibrado: ${a.expected}d hábiles (${OUTLOOK_BUCKETS[a.bucket].label})`}>
+                            {fmtShort(a.projectedEnd)}
+                          </span>
+                        ) : (
+                          <span style={{ color: INK.faint }}>—</span>
                         )}
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums" style={{ color: INK.secondary }}>
@@ -162,8 +276,8 @@ export default function Proyectos() {
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-[#F0F3F8]" style={{ backgroundColor: '#FAFBFE' }}>
-                        <td colSpan={10} className="px-6 py-4">
-                          <ProjectDetail project={p} refSla={ref} />
+                        <td colSpan={11} className="px-6 py-4">
+                          <ProjectDetail project={p} refSla={ref} assessment={a} />
                         </td>
                       </tr>
                     )}
@@ -171,7 +285,7 @@ export default function Proyectos() {
                 )
               })}
               {sorted.length === 0 && (
-                <tr><td colSpan={10}><EmptyState message="No se encontraron proyectos con esos filtros" /></td></tr>
+                <tr><td colSpan={11}><EmptyState message="No se encontraron proyectos con esos filtros" /></td></tr>
               )}
             </tbody>
           </table>
@@ -208,7 +322,22 @@ function LastMeeting({ days, pending }) {
   return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={tone.bg ? { backgroundColor: tone.bg, color: tone.color } : {}}>{daysSinceLabel(days)}</span>
 }
 
-function ProjectDetail({ project: p, refSla }) {
+function HealthBadge({ label, reading, max, dangerAt }) {
+  if (!reading?.value) return null
+  const danger = reading.value <= dangerAt
+  const ageDays = Math.floor((new Date() - new Date(reading.date)) / (24 * 3600 * 1000))
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium"
+      style={danger ? { backgroundColor: '#FCE9E8', color: '#A02722' } : { backgroundColor: '#E5F5EC', color: '#166B3D' }}
+      title={`Última lectura: ${fmtShort(reading.date)} (hace ${ageDays}d)`}
+    >
+      {label} {reading.value}/{max}
+    </span>
+  )
+}
+
+function ProjectDetail({ project: p, refSla, assessment: a }) {
   const r = refSla[p.type]
   const recent = [...(p.meetingDetails || [])].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5)
   return (
@@ -227,6 +356,12 @@ function ProjectDetail({ project: p, refSla }) {
           <Row k="País" v={p.country || '—'} />
           <Row k="Nombre completo" v={p.name} truncate />
         </dl>
+        {(p.lastSuccessOdds || p.lastSentiment) && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            <HealthBadge label="Predicción" reading={p.lastSuccessOdds} max={5} dangerAt={2} />
+            <HealthBadge label="Sentimiento" reading={p.lastSentiment} max={3} dangerAt={1} />
+          </div>
+        )}
       </div>
       <div>
         <h4 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: INK.muted }}>Tiempos</h4>
@@ -235,7 +370,10 @@ function ProjectDetail({ project: p, refSla }) {
           <Row k="Fecha límite" v={p.end ? fmtShort(p.end) : '—'} />
           {p.completed && <Row k="Completado" v={p.completedAt ? fmtShort(p.completedAt) : '—'} />}
           <Row k="Días transcurridos" v={p.days ?? '—'} />
-          {r?.n > 0 && <Row k={`Referencia ${p.type}`} v={`P50 ${r.p50}d · P80 ${r.p80}d`} />}
+          {a && <Row k="Plan calibrado" v={`${a.expected}d hábiles · P80 ${a.conservador}d`} />}
+          {a && <Row k="Término proyectado" v={fmtShort(a.projectedEnd)} />}
+          {!a && r?.n > 0 && <Row k={`Referencia ${p.type}`} v={`P50 ${r.p50}d · P80 ${r.p80}d`} />}
+          {!p.completed && <Row k="Estado actualizado" v={p.statusAgeDays != null ? `hace ${p.statusAgeDays}d` : 'sin status update'} />}
         </dl>
       </div>
       <div>
@@ -245,11 +383,19 @@ function ProjectDetail({ project: p, refSla }) {
         ) : (
           <ul className="space-y-1.5">
             {recent.map((m, i) => (
-              <li key={i} className="flex items-center gap-2" style={{ color: INK.secondary }}>
-                <Video size={12} style={{ color: BRAND.blue }} />
-                <span className="tabular-nums">{fmtShort(m.date)}</span>
-                <span style={{ color: INK.faint }}>·</span>
-                <span>{m.minutes} min</span>
+              <li key={i} style={{ color: INK.secondary }}>
+                <div className="flex items-center gap-2">
+                  <Video size={12} style={{ color: BRAND.blue }} />
+                  <span className="tabular-nums">{fmtShort(m.date)}</span>
+                  <span style={{ color: INK.faint }}>·</span>
+                  <span>{m.minutes} min</span>
+                </div>
+                {m.excerpt && (
+                  <details className="ml-5 mt-0.5">
+                    <summary className="text-[11px] cursor-pointer select-none" style={{ color: BRAND.blue }}>Ver resumen</summary>
+                    <p className="text-[12px] mt-1 leading-relaxed" style={{ color: INK.secondary }}>{m.excerpt}</p>
+                  </details>
+                )}
               </li>
             ))}
             {(p.meetingDetails || []).length > 5 && (

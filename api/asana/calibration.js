@@ -2,7 +2,23 @@
 // Recorre los 3 portfolios históricos de Asana, calcula la duración real (días hábiles)
 // de cada proyecto completado y ajusta las fórmulas base + perChannel por segmento
 // con regresión robusta (Theil-Sen). El resultado se cachea 24h en memoria.
+// Además persiste en Redis las estimaciones elegidas al parametrizar (POST /
+// GET ?estimations=1) para cerrar el ciclo estimado-vs-real.
+import { Redis } from '@upstash/redis';
+
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
+
+const ESTIMATIONS_KEY = 'ob:estimations';
+let _redis = null;
+function getRedis() {
+  if (!_redis && process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    _redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+  }
+  return _redis;
+}
 const PORTFOLIOS = {
   setup: '1203602528347966',
   upgrade: '1203602528347970',
@@ -118,7 +134,42 @@ async function fetchPortfolio(gid, headers) {
 }
 
 export default async function handler(req, res) {
+  // POST: guardar la estimación elegida al parametrizar (feedback loop)
+  if (req.method === 'POST') {
+    const redis = getRedis();
+    if (!redis) return res.status(503).json({ error: 'Redis not configured' });
+    const { projectGid } = req.body || {};
+    if (!projectGid) return res.status(400).json({ error: 'projectGid required' });
+    try {
+      await redis.hset(ESTIMATIONS_KEY, {
+        [projectGid]: JSON.stringify({ ...req.body, savedAt: new Date().toISOString() }),
+      });
+      return res.status(200).json({ saved: true });
+    } catch (err) {
+      console.error('Estimation save error:', err);
+      return res.status(500).json({ error: 'Failed to save estimation' });
+    }
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  // GET ?estimations=1: leer las estimaciones registradas
+  if (req.query.estimations === '1') {
+    const redis = getRedis();
+    if (!redis) return res.status(503).json({ error: 'Redis not configured' });
+    try {
+      const raw = (await redis.hgetall(ESTIMATIONS_KEY)) || {};
+      const estimations = {};
+      for (const [gid, val] of Object.entries(raw)) {
+        try { estimations[gid] = typeof val === 'string' ? JSON.parse(val) : val; } catch { /* skip corrupt */ }
+      }
+      return res.status(200).json({ estimations });
+    } catch (err) {
+      console.error('Estimation read error:', err);
+      return res.status(500).json({ error: 'Failed to read estimations' });
+    }
+  }
+
   const pat = process.env.ASANA_PAT;
   if (!pat) return res.status(500).json({ error: 'ASANA_PAT not configured' });
 
@@ -157,7 +208,8 @@ export default async function handler(req, res) {
         if (portfolioType === 'upgrade') segKey = 'upgrade';
         else if (portfolioType === 'reonboarding') segKey = 'reonboarding';
         else segKey = parsePlan(full);
-        rows.push({ segKey, n: channels.length, real: dur, complex: isComplex });
+        const q = `${end.getUTCFullYear()}-Q${Math.floor(end.getUTCMonth() / 3) + 1}`;
+        rows.push({ segKey, n: channels.length, real: dur, complex: isComplex, quarter: q });
       }
     };
     collect(setupItems, 'setup');
@@ -216,12 +268,43 @@ export default async function handler(req, res) {
       ? clamp(Math.round(median(cxRes) - median(nxRes)), 0, 10)
       : 5;
 
+    // Precisión del modelo: real vs predicho por segmento y trimestre (+ fila '(all)')
+    const predict = (r) => {
+      const s = segments[r.segKey] || STATIC_SEGMENTS.starter;
+      return s.base + s.perChannel * r.n + (r.complex && !['upgrade', 'reonboarding'].includes(r.segKey) ? complexExtraDays : 0);
+    };
+    const trendGroups = {};
+    for (const r of rows) {
+      for (const seg of [r.segKey, '(all)']) {
+        const key = `${r.quarter}|${seg}`;
+        (trendGroups[key] = trendGroups[key] || []).push(r);
+      }
+    }
+    const trend = Object.entries(trendGroups).map(([key, group]) => {
+      const [quarter, segment] = key.split('|');
+      const reals = group.map((r) => r.real);
+      const preds = group.map(predict);
+      const inBand = group.filter((r) => {
+        const p = predict(r);
+        return r.real >= p * multipliers.optimista && r.real <= p * multipliers.conservador;
+      }).length;
+      return {
+        quarter,
+        segment,
+        n: group.length,
+        medianReal: Math.round(median(reals)),
+        medianPred: Math.round(median(preds)),
+        inBandPct: Math.round((inBand / group.length) * 100),
+      };
+    }).sort((a, b) => a.quarter.localeCompare(b.quarter));
+
     const data = {
       segments,
       multipliers,
       complexExtraDays,
       sampleSize: rows.length,
       perSegmentSamples,
+      trend,
       source: 'live',
       generatedAt: new Date().toISOString(),
     };

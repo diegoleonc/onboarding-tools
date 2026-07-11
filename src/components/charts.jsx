@@ -1,5 +1,5 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { STATUS, GRID, INK, CAT, SURFACE } from '../theme'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart, Line, LineChart, ReferenceLine, Cell } from 'recharts'
+import { STATUS, GRID, INK, CAT, SURFACE, TIPO } from '../theme'
 
 const AXIS_TICK = { fontSize: 11, fontFamily: 'Poppins', fill: INK.muted }
 
@@ -48,13 +48,13 @@ export function CoverageChart({ data, height = 260 }) {
             if (!d) return null
             return (
               <TooltipShell
-                title={d.fullLabel}
+                title={d.isPartial ? `${d.fullLabel} — en curso` : d.fullLabel}
                 rows={[
                   { label: 'Con reunión', value: d.conReunion, color: COV.con },
                   { label: 'Sin reunión', value: d.sinReunion, color: COV.sin },
                   { label: 'Total activos', value: d.total },
                 ]}
-                footer={`${d.pct}% de cobertura`}
+                footer={d.isPartial ? `${d.pct}% de cobertura (semana parcial)` : `${d.pct}% de cobertura`}
               />
             )
           }}
@@ -64,8 +64,13 @@ export function CoverageChart({ data, height = 260 }) {
           iconType="circle" iconSize={8}
           formatter={v => <span style={{ color: INK.secondary, fontSize: 12 }}>{v === 'conReunion' ? 'Con reunión' : 'Sin reunión'}</span>}
         />
-        <Bar dataKey="conReunion" stackId="a" fill={COV.con} maxBarSize={22} stroke={SURFACE} strokeWidth={1} />
-        <Bar dataKey="sinReunion" stackId="a" fill={COV.sin} maxBarSize={22} radius={[4, 4, 0, 0]} stroke={SURFACE} strokeWidth={1} />
+        {/* semana en curso atenuada: está incompleta y no es comparable */}
+        <Bar dataKey="conReunion" stackId="a" fill={COV.con} maxBarSize={22} stroke={SURFACE} strokeWidth={1}>
+          {data.map((d, i) => <Cell key={i} opacity={d.isPartial ? 0.45 : 1} />)}
+        </Bar>
+        <Bar dataKey="sinReunion" stackId="a" fill={COV.sin} maxBarSize={22} radius={[4, 4, 0, 0]} stroke={SURFACE} strokeWidth={1}>
+          {data.map((d, i) => <Cell key={i} opacity={d.isPartial ? 0.45 : 1} />)}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   )
@@ -140,6 +145,171 @@ export function ClosesChart({ data, height = 200 }) {
         <Bar dataKey="count" fill={CAT[0]} maxBarSize={22} radius={[4, 4, 0, 0]}
           label={{ position: 'top', fontSize: 11, fontFamily: 'Poppins', fill: INK.muted }} />
       </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ---------- portfolio flow: aperturas vs cierres + backlog line ----------
+// Identidad fija: aperturas CAT[0], cierres CAT[1]; el backlog es una medida
+// derivada y va en tinta neutra. Un solo eje (todo son conteos de proyectos).
+const FLOW = { opened: CAT[0], closed: CAT[1], backlog: INK.secondary }
+
+export function FlowChart({ data, height = 240 }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={data} margin={{ left: -18, right: 8, top: 8, bottom: 0 }} barCategoryGap="25%" barGap={2}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: GRID }} tickLine={false} />
+        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip
+          cursor={{ fill: 'rgba(31,42,68,0.04)' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0]?.payload
+            if (!d) return null
+            return (
+              <TooltipShell
+                title={d.isPartial ? `${d.label} — mes en curso` : d.label}
+                rows={[
+                  { label: 'Aperturas', value: d.opened, color: FLOW.opened },
+                  { label: 'Cierres', value: d.closed, color: FLOW.closed },
+                  { label: 'Neto', value: `${d.net > 0 ? '+' : ''}${d.net}` },
+                  { label: 'Backlog al cierre', value: d.backlog, color: FLOW.backlog },
+                ]}
+                footer={d.isPartial ? 'Mes incompleto — no comparable' : undefined}
+              />
+            )
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 12, fontFamily: 'Poppins' }}
+          iconType="circle" iconSize={8}
+          formatter={v => <span style={{ color: INK.secondary, fontSize: 12 }}>{{ opened: 'Aperturas', closed: 'Cierres', backlog: 'Backlog' }[v] || v}</span>}
+        />
+        <Bar dataKey="opened" fill={FLOW.opened} maxBarSize={16} radius={[4, 4, 0, 0]} stroke={SURFACE} strokeWidth={1}>
+          {data.map((d, i) => <Cell key={i} opacity={d.isPartial ? 0.45 : 1} />)}
+        </Bar>
+        <Bar dataKey="closed" fill={FLOW.closed} maxBarSize={16} radius={[4, 4, 0, 0]} stroke={SURFACE} strokeWidth={1}>
+          {data.map((d, i) => <Cell key={i} opacity={d.isPartial ? 0.45 : 1} />)}
+        </Bar>
+        <Line dataKey="backlog" stroke={FLOW.backlog} strokeWidth={2} dot={{ r: 3, fill: FLOW.backlog, stroke: SURFACE, strokeWidth: 2 }} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ---------- cycle time trend: P50 de días a cierre por trimestre, por tipo ----------
+// Color sigue la identidad de tipo ya establecida en TIPO (badges de toda la app)
+const TREND_TYPES = ['Setup', 'Upgrade', 'Reonboarding']
+
+export function CycleTimeTrendChart({ data, height = 240 }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ left: -18, right: 8, top: 8, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: GRID }} tickLine={false} />
+        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} unit="d" />
+        <Tooltip
+          content={({ active, payload, label }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0]?.payload
+            if (!d) return null
+            const rows = TREND_TYPES
+              .filter(t => d[`${t}N`] > 0)
+              .map(t => ({
+                label: `${t} (n=${d[`${t}N`]})`,
+                value: d[t] !== null ? `P50 ${d[t]}d · P80 ${d[`${t}P80`]}d` : `n<5, sin dato`,
+                color: TIPO[t]?.color,
+              }))
+            return <TooltipShell title={label} rows={rows} footer="Días calendario a cierre · puntos con n<5 suprimidos" />
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 12, fontFamily: 'Poppins' }}
+          iconType="circle" iconSize={8}
+          formatter={v => <span style={{ color: INK.secondary, fontSize: 12 }}>{v}</span>}
+        />
+        {TREND_TYPES.map(t => (
+          <Line key={t} dataKey={t} name={t} stroke={TIPO[t]?.color} strokeWidth={2}
+            dot={{ r: 3.5, fill: TIPO[t]?.color, stroke: SURFACE, strokeWidth: 2 }}
+            connectNulls={false} />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ---------- close forecast: cierres proyectados por semana (vara calibrada) ----------
+export function ForecastChart({ data, avgPerWeek, height = 220 }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ left: -22, right: 8, top: 18, bottom: 0 }} barCategoryGap="30%">
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="label" tick={AXIS_TICK} axisLine={{ stroke: GRID }} tickLine={false} />
+        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip
+          cursor={{ fill: 'rgba(31,42,68,0.04)' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0]?.payload
+            if (!d) return null
+            const rows = Object.entries(d.byType || {}).map(([t, n]) => ({ label: t, value: n, color: TIPO[t]?.color }))
+            return (
+              <TooltipShell
+                title={d.fullLabel}
+                rows={rows.length ? rows : [{ label: 'Cierres proyectados', value: d.count }]}
+                footer={`${d.count} proyectados según plan calibrado`}
+              />
+            )
+          }}
+        />
+        {avgPerWeek > 0 && (
+          <ReferenceLine y={avgPerWeek} stroke={INK.muted} strokeDasharray="4 3"
+            label={{ value: `ritmo real ${avgPerWeek}/sem`, position: 'insideTopRight', fontSize: 10, fontFamily: 'Poppins', fill: INK.muted }} />
+        )}
+        <Bar dataKey="count" fill={CAT[0]} maxBarSize={22} radius={[4, 4, 0, 0]}
+          label={{ position: 'top', fontSize: 11, fontFamily: 'Poppins', fill: INK.muted }} />
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ---------- model precision: duración real vs predicha por trimestre ----------
+// La real lleva la identidad de serie (CAT[0]); la predicción es referencia
+// derivada del modelo y va en tinta neutra punteada.
+export function PrecisionChart({ data, height = 220 }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={data} margin={{ left: -18, right: 8, top: 8, bottom: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        <XAxis dataKey="quarter" tick={AXIS_TICK} axisLine={{ stroke: GRID }} tickLine={false} />
+        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} allowDecimals={false} unit="d" />
+        <Tooltip
+          content={({ active, payload, label }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0]?.payload
+            if (!d) return null
+            return (
+              <TooltipShell
+                title={label}
+                rows={[
+                  { label: 'Mediana real', value: `${d.medianReal}d`, color: CAT[0] },
+                  { label: 'Mediana predicha', value: `${d.medianPred}d`, color: INK.muted },
+                  { label: 'Dentro de banda P25-P80', value: `${d.inBandPct}%` },
+                ]}
+                footer={`${d.n} proyectos cerrados en el trimestre`}
+              />
+            )
+          }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 12, fontFamily: 'Poppins' }}
+          iconType="circle" iconSize={8}
+          formatter={v => <span style={{ color: INK.secondary, fontSize: 12 }}>{v === 'medianReal' ? 'Real (mediana)' : 'Predicho por el modelo'}</span>}
+        />
+        <Line dataKey="medianReal" stroke={CAT[0]} strokeWidth={2} dot={{ r: 3.5, fill: CAT[0], stroke: SURFACE, strokeWidth: 2 }} />
+        <Line dataKey="medianPred" stroke={INK.muted} strokeWidth={2} strokeDasharray="5 4" dot={false} />
+      </LineChart>
     </ResponsiveContainer>
   )
 }
