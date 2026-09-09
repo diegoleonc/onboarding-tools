@@ -302,8 +302,17 @@ function LogRow({ log, projects, projectsLoading, onLoadProjects, onAssigned }) 
         }}
       >
         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{timeStr}</td>
-        <td className="px-4 py-3 font-medium text-slate-800 max-w-[200px] truncate" title={log.name}>
-          {log.name || '—'}
+        <td className="px-4 py-3 max-w-[320px]">
+          <p className="font-medium text-slate-800 leading-snug break-words">{log.name || '—'}</p>
+          {(() => {
+            const sellers = (log.webhookPayload?.attendees?.sellers || [])
+              .map(s => s.name || s.email)
+              .filter(Boolean)
+              .join(', ')
+            return sellers
+              ? <p className="text-[11px] text-slate-400 mt-0.5 break-words">{sellers}</p>
+              : null
+          })()}
         </td>
         <td className="px-4 py-3">
           {log.projectMatch ? (
@@ -393,11 +402,19 @@ function LogRow({ log, projects, projectsLoading, onLoadProjects, onAssigned }) 
                     <option value="">
                       {projectsLoading ? 'Cargando proyectos...' : 'Seleccionar proyecto...'}
                     </option>
-                    {projects.map(p => (
-                      <option key={p.gid} value={p.gid}>
-                        {p.name}{p.owner ? ` (${p.owner})` : ''}
-                      </option>
-                    ))}
+                    {['Setup', 'Upgrade', 'Reonboarding', 'Sistemas', undefined].map(type => {
+                      const group = projects.filter(p => (type === undefined ? !p.type : p.type === type))
+                      if (group.length === 0) return null
+                      return (
+                        <optgroup key={type || 'otros'} label={type || 'Otros'}>
+                          {group.map(p => (
+                            <option key={p.gid} value={p.gid}>
+                              {p.name}{p.owner ? ` (${p.owner})` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )
+                    })}
                   </select>
                   <button
                     onClick={handleAssign}
