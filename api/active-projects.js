@@ -1,11 +1,12 @@
-// API endpoint to list active projects from the 3 onboarding portfolios
+// API endpoint to list active projects from the onboarding portfolios
 const ASANA_BASE = 'https://app.asana.com/api/1.0';
 
+// El tipo se deriva del portfolio de origen (para agrupar el selector de asignación manual)
 const PORTFOLIOS = [
-  '1203602528347966', // 01 Set Up
-  '1203602528347970', // 02 Upgrade
-  '1203602528347974', // 03 Reonboarding
-  '1216723114895955', // 04 Sistemas (Bsale)
+  { gid: '1203602528347966', type: 'Setup' },        // 01 Set Up
+  { gid: '1203602528347970', type: 'Upgrade' },      // 02 Upgrade
+  { gid: '1203602528347974', type: 'Reonboarding' }, // 03 Reonboarding
+  { gid: '1216723114895955', type: 'Sistemas' },     // 04 Sistemas (Bsale)
 ];
 
 async function asanaRequest(path, token) {
@@ -49,22 +50,23 @@ export default async function handler(req, res) {
   try {
     const projects = [];
 
-    // Fetch all 3 portfolios in parallel (with full pagination)
+    // Fetch all portfolios in parallel (with full pagination)
     const portfolioResults = await Promise.all(
-      PORTFOLIOS.map(gid => fetchAllPortfolioItems(gid, token))
+      PORTFOLIOS.map(({ gid }) => fetchAllPortfolioItems(gid, token))
     );
 
-    for (const items of portfolioResults) {
+    portfolioResults.forEach((items, i) => {
       for (const p of items) {
         if (!p.completed && !projects.some(existing => existing.gid === p.gid)) {
           projects.push({
             gid: p.gid,
             name: p.name,
             owner: p.owner?.name || null,
+            type: PORTFOLIOS[i].type,
           });
         }
       }
-    }
+    });
 
     // Sort alphabetically
     projects.sort((a, b) => a.name.localeCompare(b.name));
