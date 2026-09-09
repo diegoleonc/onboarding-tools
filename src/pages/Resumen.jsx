@@ -88,7 +88,7 @@ export default function Resumen() {
   }, [snapshots])
 
   const pipeline = useMemo(() => {
-    const rows = ['Setup', 'Upgrade', 'Reonboarding'].map(tipo => {
+    const rows = ['Setup', 'Upgrade', 'Reonboarding', 'Sistemas'].map(tipo => {
       const projs = active.filter(p => p.type === tipo)
       const row = { tipo, total: projs.length, on_track: 0, at_risk: 0, off_track: 0, on_hold: 0, none: 0 }
       for (const p of projs) row[statusOf(p)]++

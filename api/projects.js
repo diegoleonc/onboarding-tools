@@ -6,6 +6,7 @@ const PORTFOLIOS = {
   setup: '1203602528347966',
   upgrade: '1203602528347970',
   reonboarding: '1203602528347974',
+  sistemas: '1216723114895955', // Bsale — el tipo viene del portfolio, no del nombre
 };
 
 const OPT_FIELDS = [
@@ -154,7 +155,7 @@ function calculateDays(project) {
   return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 }
 
-function transformProject(project) {
+function transformProject(project, typeOverride) {
   const parsed = parseProjectName(project.name);
   const estadoOnb = getCustomFieldValue(project, 'Estado onboarding');
   const planField = getCustomFieldValue(project, 'Plan');
@@ -169,7 +170,7 @@ function transformProject(project) {
     gid: project.gid,
     name: project.name,
     company: parsed.company,
-    type: parsed.type,
+    type: typeOverride || parsed.type,
     plan: planField || parsed.plan,
     country: paisField || parsed.country,
     owner: project.owner?.name || 'Sin asignar',
@@ -203,24 +204,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch all 3 portfolios in parallel
-    const [setupItems, upgradeItems, reonboardingItems] = await Promise.all([
+    // Fetch all portfolios in parallel
+    const [setupItems, upgradeItems, reonboardingItems, sistemasItems] = await Promise.all([
       fetchAllPortfolioItems(PORTFOLIOS.setup, token),
       fetchAllPortfolioItems(PORTFOLIOS.upgrade, token),
       fetchAllPortfolioItems(PORTFOLIOS.reonboarding, token),
+      fetchAllPortfolioItems(PORTFOLIOS.sistemas, token),
     ]);
 
     // Dedupe by gid: a project present in more than one portfolio would
-    // otherwise be counted twice in every KPI
+    // otherwise be counted twice in every KPI. Legacy portfolios go first so a
+    // project duplicated into Sistemas keeps its original name-based type.
     const seen = new Set();
-    const allProjects = [...setupItems, ...upgradeItems, ...reonboardingItems].filter(p => {
+    const tagged = [
+      ...[...setupItems, ...upgradeItems, ...reonboardingItems].map(p => ({ p, typeOverride: null })),
+      ...sistemasItems.map(p => ({ p, typeOverride: 'Sistemas' })),
+    ].filter(({ p }) => {
       if (seen.has(p.gid)) return false;
       seen.add(p.gid);
       return true;
     });
 
     // Transform and split into active/completed
-    const transformed = allProjects.map(transformProject);
+    const transformed = tagged.map(({ p, typeOverride }) => transformProject(p, typeOverride));
     const active = transformed.filter(p => !p.completed);
     const completed = transformed.filter(p => p.completed);
 

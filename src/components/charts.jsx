@@ -200,7 +200,7 @@ export function FlowChart({ data, height = 240 }) {
 
 // ---------- cycle time trend: P50 de días a cierre por trimestre, por tipo ----------
 // Color sigue la identidad de tipo ya establecida en TIPO (badges de toda la app)
-const TREND_TYPES = ['Setup', 'Upgrade', 'Reonboarding']
+const TREND_TYPES = ['Setup', 'Upgrade', 'Reonboarding', 'Sistemas']
 
 export function CycleTimeTrendChart({ data, height = 240 }) {
   return (

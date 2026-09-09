@@ -44,7 +44,13 @@ export const TIPO = {
   Setup:        { color: CAT[0], bg: '#EBF0FA', text: '#3D5AA6' },
   Upgrade:      { color: CAT[2], bg: '#F8EAF4', text: '#933D7B' },
   Reonboarding: { color: CAT[1], bg: '#FBF0DF', text: '#A05E08' },
+  Sistemas:     { color: CAT[3], bg: '#E6F3EC', text: '#1C6B44' }, // Bsale — siguiente hue en orden fijo
 }
+
+// Tipos cubiertos por el modelo de calibración (1.083 proyectos de onboarding).
+// Sistemas queda fuera hasta tener histórico propio: compararlo contra fórmulas
+// de marketplaces daría alertas falsas.
+export const CALIBRATED_TYPES = ['Setup', 'Upgrade', 'Reonboarding']
 
 export function statusOf(project) {
   const st = project.statusType
