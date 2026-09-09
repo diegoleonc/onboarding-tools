@@ -175,7 +175,7 @@ export default function Proyectos() {
       {/* single filter row */}
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <Segmented value={scope} onChange={v => setParam('scope', v === 'active' ? '' : v)} options={[['active', 'Activos'], ['completed', 'Completados'], ['all', 'Todos']]} />
-        <FilterSelect value={filters.type} onChange={v => setParam('type', v)} options={['Setup', 'Upgrade', 'Reonboarding']} placeholder="Tipo" />
+        <FilterSelect value={filters.type} onChange={v => setParam('type', v)} options={['Setup', 'Upgrade', 'Reonboarding', 'Sistemas']} placeholder="Tipo" />
         <FilterSelect value={filters.status} onChange={v => setParam('status', v)} options={STATUS_OPTIONS} placeholder="Estado" />
         <FilterSelect value={filters.owner} onChange={v => setParam('owner', v)} options={owners} placeholder="Implementador" />
         <FilterSelect value={filters.country} onChange={v => setParam('country', v)} options={countries} placeholder="País" />

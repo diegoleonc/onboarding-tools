@@ -2,7 +2,7 @@
 // Insight engine — turns raw project + effort data into the
 // prioritized signals the command center runs on.
 // ============================================================
-import { statusOf } from '../theme'
+import { statusOf, CALIBRATED_TYPES } from '../theme'
 import { calculateEstimation, addBusinessDays } from './parsing'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -257,7 +257,7 @@ export function monthlyCloses(completed, months = 6) {
 // ---------- SLA reference (P50/P80 of completed, by type) ----------
 export function slaReference(completed) {
   const ref = {}
-  for (const type of ['Setup', 'Upgrade', 'Reonboarding']) {
+  for (const type of ['Setup', 'Upgrade', 'Reonboarding', 'Sistemas']) {
     const days = completed.filter(p => p.type === type && p.days > 0).map(p => p.days)
     ref[type] = { p50: percentile(days, 50), p80: percentile(days, 80), n: days.length }
   }
@@ -265,7 +265,8 @@ export function slaReference(completed) {
 }
 
 export function slaRisk(project, ref) {
-  const r = ref[project.type] || ref.Setup
+  // sin fallback a Setup: un tipo sin histórico propio no se compara contra otro
+  const r = ref[project.type]
   if (!r || !r.n || !project.days) return null
   if (project.days > r.p80) return 'alto'
   if (project.days > r.p50) return 'medio'
@@ -278,6 +279,9 @@ export function slaRisk(project, ref) {
 // Devuelve null si el proyecto no es evaluable (sin canales o sin fecha).
 export function calibratedAssessment(p, calibration) {
   if (!calibration?.segments || !p.totalChannels) return null
+  // el modelo solo conoce los tipos de onboarding; un tipo nuevo (p.ej. Sistemas)
+  // caería al segmento por plan y daría comparaciones sin sentido
+  if (!CALIBRATED_TYPES.includes(p.type)) return null
   const startStr = p.start || p.createdAt?.split('T')[0]
   if (!startStr) return null
 
@@ -456,7 +460,7 @@ export function cycleTimeTrend(completed, quarters = 6) {
   }
   return buckets.map(b => {
     const row = { key: b.key, label: b.label }
-    for (const type of ['Setup', 'Upgrade', 'Reonboarding']) {
+    for (const type of ['Setup', 'Upgrade', 'Reonboarding', 'Sistemas']) {
       const days = b.types[type] || []
       // n<5: punto suprimido — P50/P80 sobre 2-3 proyectos es ruido, no tendencia
       row[type] = days.length >= 5 ? percentile(days, 50) : null

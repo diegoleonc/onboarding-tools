@@ -10,6 +10,7 @@ const PORTFOLIOS = [
   '1203602528347966', // 01 Set Up
   '1203602528347970', // 02 Upgrade
   '1203602528347974', // 03 Reonboarding
+  '1216723114895955', // 04 Sistemas (Bsale)
 ];
 
 const CONCURRENCY = 10; // Max parallel Asana API calls
